@@ -340,6 +340,31 @@ class NeuronGraphExtractor:
         decoded = [norm_text(s) for s in decoded]
 
         return hidden_states, decoded
+    
+    @torch.inference_mode()
+    def process_single(
+        self,
+        image: Any,
+        text: str,
+        max_new_tokens: int = 50,
+        min_new_tokens: int = 1,
+        do_sample: bool = False,
+        num_beams: int = 1,
+        no_repeat_ngram_size: Optional[int] = None,
+    ) -> Tuple[List[torch.Tensor], str]:
+        """
+        Single-sample version of process() for convenience.
+        """
+        hs, decoded = self.process(
+            [image],
+            [text],
+            max_new_tokens=max_new_tokens,
+            min_new_tokens=min_new_tokens,
+            do_sample=do_sample,
+            num_beams=num_beams,
+            no_repeat_ngram_size=no_repeat_ngram_size,
+        )
+        return hs, decoded[0]
 
     # TODO: make it layer indices list[int]?
     @torch.inference_mode()
