@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv, global_mean_pool, global_max_pool
 from torch_geometric.data import Data
-from transformers import LlavaForConditionalGeneration, AutoProcessor, Qwen2_5_VLForConditionalGeneration, Blip2ForConditionalGeneration, Gemma3ForConditionalGeneration
+from transformers import LlavaForConditionalGeneration, AutoProcessor, Qwen2_5_VLForConditionalGeneration, Blip2ForConditionalGeneration, Gemma3ForConditionalGeneration, AutoTokenizer, AutoModel
 import warnings
 import numpy as np
 import scipy.sparse as sp
@@ -157,22 +157,27 @@ class MLPPredictor(nn.Module):
 
 def load_model(model_name: str, device: str = "cuda:0"):
     lower = model_name.lower()
-
+    # check do we need eval() on the model
     if "llava" in lower:
         model_type = "llava"
         model = LlavaForConditionalGeneration.from_pretrained(
             model_name, torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
-        ).to(device)
+        ).to(device).eval()
     elif "qwen" in lower:
         model_type = "qwen"
         model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             model_name, torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
-        ).to(device)
+        ).to(device).eval()
     elif "gemma" in lower:
         model_type = "gemma"
         model = Gemma3ForConditionalGeneration.from_pretrained(
-            model_name, torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
-        ).to(device)
+            model_name#, torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
+        ).to(device).eval()
+    elif "internvl" in lower:
+        model_type = "internvl"
+        model = AutoModel.from_pretrained(
+            model_name, torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32, trust_remote_code=True
+        ).to(device).eval()
     else:
         raise ValueError(f"Unsupported model family for: {model_name} (expected llava/qwen/gemma)")
 
@@ -353,18 +358,57 @@ class NeuronGraphExtractor:
         no_repeat_ngram_size: Optional[int] = None,
     ) -> Tuple[List[torch.Tensor], str]:
         """
-        Single-sample version of process() for convenience.
+        Returns:
+        - hidden_states_per_layer: list of [1, T_prompt, H] for vision+prompt only
+        - generated_text: decoded string of continuation
         """
-        hs, decoded = self.process(
-            [image],
-            [text],
+        model = self.model
+        processor = self.processor
+        tokenizer = self.tokenizer
+        device = self.device
+
+        text = prompt_for_model(text, self.model_type)
+
+        # 1) Forward for vision + prompt hidden states
+        inputs = processor(images=image, text=text, return_tensors="pt", padding=False)
+        inputs = {k: (v.to(device) if isinstance(v, torch.Tensor) else v) for k, v in inputs.items()}
+
+        out = model(**inputs, output_hidden_states=True, return_dict=True, use_cache=False)
+        hidden_states: List[torch.Tensor] = list(out.hidden_states)
+
+        # 2) Generate continuation
+        gen_kwargs = dict(
             max_new_tokens=max_new_tokens,
             min_new_tokens=min_new_tokens,
             do_sample=do_sample,
             num_beams=num_beams,
-            no_repeat_ngram_size=no_repeat_ngram_size,
+            use_cache=True,
+            return_dict_in_generate=True,
         )
-        return hs, decoded[0]
+        if tokenizer is not None:
+            if tokenizer.eos_token_id is not None:
+                gen_kwargs["eos_token_id"] = tokenizer.eos_token_id
+            if tokenizer.pad_token_id is not None:
+                gen_kwargs["pad_token_id"] = tokenizer.pad_token_id
+        if no_repeat_ngram_size is not None:
+            gen_kwargs["no_repeat_ngram_size"] = int(no_repeat_ngram_size)
+
+        gen_out = model.generate(**inputs, **gen_kwargs)
+        seq = gen_out.sequences
+        prompt_len = inputs["input_ids"].shape[1]
+        gen_ids = seq[:, prompt_len:]
+
+        # 3) Decode generated text
+        if tokenizer is not None:
+            generated_text = tokenizer.batch_decode(gen_ids, skip_special_tokens=True)[0]
+        elif hasattr(processor, "batch_decode"):
+            generated_text = processor.batch_decode(gen_ids, skip_special_tokens=True)[0]
+        else:
+            generated_text = processor.decode(gen_ids[0], skip_special_tokens=True)
+
+        return hidden_states, generated_text
+
+
 
     # TODO: make it layer indices list[int]?
     @torch.inference_mode()

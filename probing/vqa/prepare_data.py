@@ -15,8 +15,6 @@ from metrics import spice_scores, meteor_scores, rougeL_scores, bertscore_f1, sa
 from model import NeuronGraphExtractor as GraphExtractor
 from model import corr_graph_torch
 
-# TODO: before run dataset, select question first 2, save correct and predicted answers
-
 '''Exist, Count, Compare Integer, Query Attribute and Compare Attribute'''
 
 def split_clevr_question_answer(qa_str):
@@ -31,7 +29,38 @@ CLEVR_COLORS = ['gray', 'red', 'blue', 'green', 'brown', 'purple', 'cyan', 'yell
 CLEVR_SHAPES = ['cube', 'sphere', 'cylinder']
 CLEVR_RELATIONS = ['left', 'right', 'front', 'behind', 'above', 'below']
 CLEVR_EXISTENCE = ['Is there', 'Are there']
-CLEVR_COUNTING = ['How many']
+CLEVR_COUNTING = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
+
+def constrain_clevr_prompt(question: str, task: str) -> str:
+    """Append strict output-format constraints to the question."""
+    if task == "color":
+        choices = ", ".join(CLEVR_COLORS)
+        return f"{question} Answer with one word from: {choices}. Output exactly one word."
+    elif task == "counting":
+        return f"{question} Answer with a single integer 0-10. Output only the number."
+    elif task == "existence":
+        return f"{question} Answer with 'yes' or 'no' only. Output exactly one word."
+    elif task == "comparison":
+        return f"{question} Answer with 'more', 'fewer', or 'equal' only. Output exactly one word."
+    elif task == "shape":
+        choices = ", ".join(CLEVR_SHAPES)
+        return f"{question} Answer with one word from: {choices}. Output exactly one word."
+    else:
+        return question
+
+def candidate_answers(task: str):
+    if task == "color":
+        return CLEVR_COLORS
+    elif task == "counting":
+        return CLEVR_COUNTING
+    elif task == "existence":
+        return ['yes', 'no']
+    elif task == "comparison":
+        return ['more', 'fewer', 'equal']
+    elif task == "shape":
+        return CLEVR_SHAPES
+    else:
+        return []
 
 def classify_clevr_question(question, answer):
     question = question.lower()
@@ -115,10 +144,12 @@ def create_clevr_dataset(
 
     all_preds = []
     all_refs  = []
+    correct = 0
+    total = 0
     
     for batch_idx in tqdm(range(total_batches), desc="Processing batches"):
         start_idx = batch_idx * batch_size
-        end_idx = min(start_idx + batch_size, len(clevr_samples))
+        end_idx = min(start_idx + batch_size, len(all_images))
         images = all_images[start_idx:end_idx]
         questions = all_questions[start_idx:end_idx]
         answers = all_answers[start_idx:end_idx]
@@ -128,11 +159,10 @@ def create_clevr_dataset(
             continue
 
         try:
-            graph_extraction_prompts = questions
+            graph_extraction_prompts = [constrain_clevr_prompt(q, task) for q in questions]
             hidden_states_all, generations = extractor.process(
                 images, graph_extraction_prompts
             )
-            print(generations)
             
             # Process each item in batch
             for b_idx, (gen, global_idx) in enumerate(
@@ -151,7 +181,11 @@ def create_clevr_dataset(
 
                 # Last token hidden state from the last layer
                 last_token_state = hidden_states_all[-1][b_idx, -1, :].detach().cpu().numpy()
-
+                gen = gen.lower().strip()
+                if gen == answers[b_idx]:
+                    correct += 1
+                total += 1
+                # print(f"Sample {global_idx} Prediction: {gen} | Reference: {answers[b_idx]}")
                 # Store sample
                 sample = {
                     "graph_layer_0": graphs["layer_0"],
@@ -159,12 +193,16 @@ def create_clevr_dataset(
                     "graph_layer_last": graphs["layer_last"],
                     "last_token_state": last_token_state,
                     "predicted_answer": gen,
-                    "reference_answer": batch_answers[b_idx],
+                    "reference_answer": answers[b_idx],
                 }
                 all_samples.append(sample)
+                all_preds.append(gen)
 
             if batch_idx % log_every == 0:
                 print(f"Processed sample {global_idx}")
+                print(f"Prompts: {graph_extraction_prompts}")
+                print(f"Predictions: {generations}")
+                print(f"References: {answers}")
         except Exception as e:
             print(f"Error processing batch {batch_idx}: {str(e)}")
             continue
@@ -181,7 +219,7 @@ def create_clevr_dataset(
         print("FINAL STATISTICS")
         print("="*60)
         print(f"Samples processed: {len(all_samples)}")
-
+        print(f"Accuracy: {correct}/{total} = {correct/total*100:.2f}%")
         
         # Verify data structure
         sample_check = all_samples[0]
@@ -195,33 +233,36 @@ def create_clevr_dataset(
         print(f"  Graph layer 0 edges (first 5): {edge_index[:, :5]}")
         print(f"  Graph layer 0 weights (first 5): {edge_weight[:5]}")
 
-    #     # Save results
-    #     final_path = os.path.join(output_dir, "complete_dataset.pkl")
-    #     with open(final_path, "wb") as f:
-    #         pickle.dump(all_samples, f)
+        # Save results
+        final_path = os.path.join(output_dir, "complete_dataset.pkl")
+        with open(final_path, "wb") as f:
+            pickle.dump(all_samples, f)
             
-    #     metadata = {
-    #         "num_samples": len(all_samples),
-    #         "model": model_name,
-    #         "model_type": extractor.model_type,
-    #         "num_layers": extractor.num_layers,
-    #         "hidden_dim": extractor.hidden_dim,
-    #         "layers_extracted": list(layer_indices.keys()),
-    #         "layer_indices": layer_indices,
-    #         "batch_size": batch_size,
-    #         "sample_keys": list(all_samples[0].keys()) if all_samples else [],
-    #         "sparse_level": sparse_level,
-    #         "num_classes": 8 if task == 'color' else None,
-    #     }
+        metadata = {
+            "num_samples": len(all_samples),
+            "model": model_name,
+            "model_type": extractor.model_type,
+            "num_layers": extractor.num_layers,
+            "hidden_dim": extractor.hidden_dim,
+            "layers_extracted": list(layer_indices.keys()),
+            "layer_indices": layer_indices,
+            "batch_size": batch_size,
+            "sample_keys": list(all_samples[0].keys()) if all_samples else [],
+            "sparse_level": sparse_level,
+            "task": task,
+            "accuracy": correct / total if total > 0 else 0.0,
+            "candidate_answers": candidate_answers(task),
+            "num_classes": len(candidate_answers(task)),
+        }
         
-    #     with open(os.path.join(output_dir, "metadata.json"), "w") as f:
-    #         json.dump(metadata, f, indent=2)
+        with open(os.path.join(output_dir, "metadata.json"), "w") as f:
+            json.dump(metadata, f, indent=2)
 
-    #     print(f"\nDataset saved to: {output_dir}")
-    #     print("Files created:")
-    #     print("  - complete_dataset.pkl")
-    #     print("  - metadata.json")
-    #     print("="*60)
+        print(f"\nDataset saved to: {output_dir}")
+        print("Files created:")
+        print("  - complete_dataset.pkl")
+        print("  - metadata.json")
+        print("="*60)
 
     return all_samples
 
@@ -237,7 +278,7 @@ if __name__ == "__main__":
                         help="Batch size for model forward")
     parser.add_argument("--sparse_level", type=float, default=0.9,
                         help="Quantile threshold for sparsifying correlation graph")
-    parser.add_argument("--task", type=str, default="color", choices=['color', 'counting', 'existence', 'comparison'],
+    parser.add_argument("--task", type=str, default="color",
                         help="Type of VQA task to filter on")
     parser.add_argument("--device", type=str, default="cuda:0",
                         help="Device string, e.g., 'cuda:0' or 'cpu'")
