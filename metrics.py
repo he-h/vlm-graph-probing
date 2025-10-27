@@ -32,16 +32,6 @@ def meteor_scores(preds: List[str], refs: List[List[str]]) -> List[float]:
     """Calculate METEOR scores for raw strings."""
     _, sent = meteor(preds, refs)
     return sent["meteor"].tolist()
-    # meteor_scorer = Meteor()
-    
-    # # Format for pycocoevalcap - all samples at once
-    # gts = {i: ref_list for i, ref_list in enumerate(refs)}
-    # res = {i: [pred] for i, pred in enumerate(preds)}
-    
-    # # This returns average score and individual scores
-    # _, individual_scores = meteor_scorer.compute_score(gts, res)
-    
-    # return individual_scores
 
 
 def rougeL_scores(preds: List[str], refs: List[List[str]]) -> List[float]:

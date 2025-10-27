@@ -1,308 +1,183 @@
 import torch
 import numpy as np
-from datasets import load_dataset
-from PIL import Image
-import json
 from tqdm import tqdm
-import pickle
-import scipy.sparse as sp
-import os
-import warnings
-import argparse
+import pickle, os, json, argparse
 
 from utils import *
-from metrics import spice_scores, meteor_scores, rougeL_scores, bertscore_f1, sanitize_preds_refs
 from model import NeuronGraphExtractor as GraphExtractor
 from model import corr_graph_torch
-
-'''Exist, Count, Compare Integer, Query Attribute and Compare Attribute'''
-
-def split_clevr_question_answer(qa_str):
-    list_ = qa_str.split("?")
-    if len(list_) != 2:
-        raise ValueError(f"Unexpected QA format, cannot split question and answer: {qa_str}")
-    question = list_[0] + "?"
-    answer = list_[1].strip().lower()
-    return question, answer
-
-CLEVR_COLORS = ['gray', 'red', 'blue', 'green', 'brown', 'purple', 'cyan', 'yellow']
-CLEVR_SHAPES = ['cube', 'sphere', 'cylinder']
-CLEVR_RELATIONS = ['left', 'right', 'front', 'behind', 'above', 'below']
-CLEVR_EXISTENCE = ['Is there', 'Are there']
-CLEVR_COUNTING = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10']
-
-def constrain_clevr_prompt(question: str, task: str) -> str:
-    """Append strict output-format constraints to the question."""
-    if task == "color":
-        choices = ", ".join(CLEVR_COLORS)
-        return f"{question} Answer with one word from: {choices}. Output exactly one word."
-    elif task == "counting":
-        return f"{question} Answer with a single integer 0-10. Output only the number."
-    elif task == "existence":
-        return f"{question} Answer with 'yes' or 'no' only. Output exactly one word."
-    elif task == "comparison":
-        return f"{question} Answer with 'more', 'fewer', or 'equal' only. Output exactly one word."
-    elif task == "shape":
-        choices = ", ".join(CLEVR_SHAPES)
-        return f"{question} Answer with one word from: {choices}. Output exactly one word."
-    else:
-        return question
-
-def candidate_answers(task: str):
-    if task == "color":
-        return CLEVR_COLORS
-    elif task == "counting":
-        return CLEVR_COUNTING
-    elif task == "existence":
-        return ['yes', 'no']
-    elif task == "comparison":
-        return ['more', 'fewer', 'equal']
-    elif task == "shape":
-        return CLEVR_SHAPES
-    else:
-        return []
-
-def classify_clevr_question(question, answer):
-    question = question.lower()
-    answer = answer.lower()
-
-    try:
-        num = int(answer)
-        if 0 <= num <= 10:
-            return 'counting'
-    except:
-        pass
-
-    if "color" in question and answer in CLEVR_COLORS:
-        return 'color'
-    elif answer in CLEVR_SHAPES:
-        return 'shape'
-    else:
-        return 'unknown'
+from dataset import prepare_vlm_data  # <-- use your existing loader
 
 
 def create_clevr_dataset(
     num_samples=1000,
-    model_name="llava-hf/llava-1.5-7b-hf",
+    model_ckpt="llava-hf/llava-1.5-7b-hf",
     output_dir="probing_dataset",
     verbose=False,
     device="cuda:0",
-    task='color',
-    batch_size=8,
+    task="color",                  # 'color' | 'counting' | 'existence' | 'comparison' | 'shape'
     sparse_level=0.9,
-    log_every=5,
+    log_every=200,
+    layer_slices=4,                # K slices -> K+1 evenly spaced layers (incl. first & last)
 ):
     """
-    Create graph probing dataset for VLM with CLEVR captions (optimized batched processing).
-    """
-    model_prefix = model_path2name(model_name)
-    output_dir = f"data/{model_prefix}_clevr_{task}_sparsity_{int(sparse_level * 100)}_{output_dir}"
-    os.makedirs(output_dir, exist_ok=True)
+    Create a graph probing dataset for a VLM on CLEVR VQA using prepare_vlm_data().
 
-    # Load CLEVR dataset
-    print("="*60)
-    print("Loading CLEVR dataset from HuggingFace...")
-    clevr_samples = load_dataset("laion/clevr-webdataset", split='validation')
-    if not clevr_samples:
-        print("ERROR: Failed to load CLEVR dataset from HuggingFace!")
+    Per-layer artifacts (mirror caption script):
+      - graphs_layer_<L>.pkl : list of [num_nodes, edge_index(int64), edge_weight(float32)]
+      - last_token_layer_<L>.npy : float32 array [N, H]
+    """
+    model_prefix = model_ckpt2name(model_ckpt)
+    out_dir = f"data/{model_prefix}_clevr_{task}_sparsity_{int(sparse_level * 100)}_{output_dir}"
+    os.makedirs(out_dir, exist_ok=True)
+
+    # ---- Load data ----
+    print("=" * 60)
+    print(f"Preparing CLEVR samples, task={task}")
+    data = prepare_vlm_data(dataset="clevr", num_samples=num_samples, task=task)
+    if not data:
+        print("ERROR: No CLEVR samples loaded!")
         return []
 
-    valid_sample_counts = 0
-    all_images = []
-    all_questions = []
-    all_answers = []
-    for sample in clevr_samples:
-        txt = sample['txt']
+    print("=" * 60)
+    print(f"Initializing {model_ckpt} model...")
+    extractor = GraphExtractor(model_ckpt=model_ckpt, device=device)
+
+    # ---- Select evenly spaced layers ----
+    selected_layers = evenly_spaced_layers(extractor.num_layers, layer_slices)
+    if verbose:
+        print(f"Selected layers (total {extractor.num_layers}): {selected_layers}")
+
+    # Per-layer collectors
+    graphs_by_layer = {L: [] for L in selected_layers}
+    last_token_by_layer = {L: [] for L in selected_layers}
+
+    correct, total = 0, 0
+    preds, refs = [], []
+
+    # ---- Main loop ----
+    for sample_idx, (image, prompt, answer) in enumerate(tqdm(data, desc="Processing CLEVR samples")):
         try:
-            question, answer = split_clevr_question_answer(txt)
-            if classify_clevr_question(question, answer) == task:
-                valid_sample_counts += 1
-                all_questions.append(question)
-                all_answers.append(answer)
-                all_images.append(sample['jpg'].convert("RGB"))
+            hidden_states_all, gen = extractor.process_single(image, prompt)
+            # detach to be safe
+            hidden_states_all = [h.detach() for h in hidden_states_all]
+            _, seq_len, hidden_dim = hidden_states_all[-1].shape
+
+            # Build graphs & last-token vectors for selected layers
+            for L in selected_layers:
+                L_eff = min(L, len(hidden_states_all) - 1)
+                hs = hidden_states_all[L_eff][0]  # [seq, hidden]
+
+                g = corr_graph_torch(hs, sparse_level=sparse_level)
+                edge_index = g["edge_index"].astype(np.int64)
+                edge_weight = g["edge_weight"].astype(np.float32)
+
+                graphs_by_layer[L].append([int(hs.shape[0]), edge_index, edge_weight])
+
+                last_vec = hs[-1, :].contiguous().cpu().numpy().astype(np.float32)
+                last_token_by_layer[L].append(last_vec)
+
+            # Accuracy (simple normalization)
+            pred = (gen.lower().strip() if isinstance(gen, str) else str(gen))
+            ref  = (answer.lower().strip() if isinstance(answer, str) else str(answer))
+            preds.append(pred)
+            refs.append(ref)
+            correct += int(pred == ref)
+            total += 1
+
+            # Logging
+            if sample_idx > 0 and (sample_idx % log_every == 0):
+                print(f"\n--- Sample {sample_idx} ---")
+                print(f"Q: {prompt}")
+                print(f"Pred: {gen} | Ref: {answer}")
+                if verbose:
+                    L0 = selected_layers[0]
+                    num_nodes, eidx, ew = graphs_by_layer[L0][-1]
+                    print(f"  [Layer {L0}] edges: {eidx.shape[1]}, "
+                          f"weights in [{ew.min():.4f}, {ew.max():.4f}]")
+
+            del hidden_states_all
+            torch.cuda.empty_cache()
+
         except Exception as e:
-            continue
-        if valid_sample_counts >= num_samples:
-            break
-
-    print(f"Loaded {valid_sample_counts} samples from CLEVR validation dataset")
-    print("="*60)
-    print(f"Initializing {model_name} model...")
-    extractor = GraphExtractor(model_name=model_name, device=device)
-
-    layer_indices = {
-        'layer_0': 0,
-        'layer_middle': extractor.num_layers // 2,
-        'layer_last': extractor.num_layers - 1 
-    }
-
-    all_samples = []
-    print(f"Batch size: {batch_size}")
-
-    # Process in batches with progress bar
-    total_batches = (valid_sample_counts + batch_size - 1) // batch_size
-
-    all_preds = []
-    all_refs  = []
-    correct = 0
-    total = 0
-    
-    for batch_idx in tqdm(range(total_batches), desc="Processing batches"):
-        start_idx = batch_idx * batch_size
-        end_idx = min(start_idx + batch_size, len(all_images))
-        images = all_images[start_idx:end_idx]
-        questions = all_questions[start_idx:end_idx]
-        answers = all_answers[start_idx:end_idx]
-        valid_indices = list(range(start_idx, end_idx))
-
-        if not images:
+            print(f"Error processing sample {sample_idx}: {str(e)}")
             continue
 
-        try:
-            graph_extraction_prompts = [constrain_clevr_prompt(q, task) for q in questions]
-            hidden_states_all, generations = extractor.process(
-                images, graph_extraction_prompts
-            )
-            
-            # Process each item in batch
-            for b_idx, (gen, global_idx) in enumerate(
-                zip(generations, valid_indices)
-            ):
-                
-                # compute correlation graph for selected layers
-                graphs = {}
-                for layer_name, layer_idx in layer_indices.items():
-                    layer_idx = min(layer_idx, len(hidden_states_all) - 1)
-                    
-                    # Extract hidden states for this sample and layer
-                    hs = hidden_states_all[layer_idx][b_idx]  # shape [seq, hidden]
-                    graph = corr_graph_torch(hs, sparse_level=sparse_level)
-                    graphs[layer_name] = graph
+    # ---- Summary ----
+    print(f"\nTotal samples processed: {total}")
+    acc = (correct / total) if total > 0 else 0.0
+    print(f"Accuracy: {correct}/{total} = {acc * 100:.2f}%")
 
-                # Last token hidden state from the last layer
-                last_token_state = hidden_states_all[-1][b_idx, -1, :].detach().cpu().numpy()
-                gen = gen.lower().strip()
-                if gen == answers[b_idx]:
-                    correct += 1
-                total += 1
-                # print(f"Sample {global_idx} Prediction: {gen} | Reference: {answers[b_idx]}")
-                # Store sample
-                sample = {
-                    "graph_layer_0": graphs["layer_0"],
-                    "graph_layer_middle": graphs["layer_middle"],
-                    "graph_layer_last": graphs["layer_last"],
-                    "last_token_state": last_token_state,
-                    "predicted_answer": gen,
-                    "reference_answer": answers[b_idx],
-                }
-                all_samples.append(sample)
-                all_preds.append(gen)
+    # ---- SAVE per-layer artifacts ----
+    print(f"\n{'='*60}\nSAVING PER-LAYER ARTIFACTS\n{'='*60}")
+    for L in selected_layers:
+        graphs_path = os.path.join(out_dir, f"graphs_layer_{L}.pkl")
+        with open(graphs_path, "wb") as f:
+            pickle.dump(graphs_by_layer[L], f)
 
-            if batch_idx % log_every == 0:
-                print(f"Processed sample {global_idx}")
-                print(f"Prompts: {graph_extraction_prompts}")
-                print(f"Predictions: {generations}")
-                print(f"References: {answers}")
-        except Exception as e:
-            print(f"Error processing batch {batch_idx}: {str(e)}")
-            continue
+        if len(last_token_by_layer[L]) > 0:
+            last_mat = np.stack(last_token_by_layer[L], axis=0)  # [N, H]
+        else:
+            last_mat = np.zeros((0, extractor.hidden_dim), dtype=np.float32)
+        np.save(os.path.join(out_dir, f"last_token_layer_{L}.npy"), last_mat)
+
+    with open(os.path.join(out_dir, "preds.json"), "w") as f:
+        json.dump(preds, f, indent=2)
+
+    with open(os.path.join(out_dir, "refs.json"), "w") as f:
+        json.dump(refs, f, indent=2)
         
-        del hidden_states_all
-        torch.cuda.empty_cache()
-
-    print(f"Total samples processed: {len(all_samples)}")
-
-
-    # Final statistics
-    if all_samples:
-        print(f"\n{'='*60}")
-        print("FINAL STATISTICS")
-        print("="*60)
-        print(f"Samples processed: {len(all_samples)}")
-        print(f"Accuracy: {correct}/{total} = {correct/total*100:.2f}%")
-        
-        # Verify data structure
-        sample_check = all_samples[0]
-        print(f"\nSample structure verification:")
-        print(f"  Keys in sample: {list(sample_check.keys())}")
-        print(f"  Graph layer 0 keys: {list(sample_check['graph_layer_0'].keys())}")
-        print(f"  Last token state shape: {sample_check['last_token_state'].shape}")
-        # print sample edge index and weights for layer 0, first 5 edges
-        edge_index = sample_check['graph_layer_0']['edge_index']
-        edge_weight = sample_check['graph_layer_0']['edge_weight']
-        print(f"  Graph layer 0 edges (first 5): {edge_index[:, :5]}")
-        print(f"  Graph layer 0 weights (first 5): {edge_weight[:5]}")
-
-        # Save results
-        final_path = os.path.join(output_dir, "complete_dataset.pkl")
-        with open(final_path, "wb") as f:
-            pickle.dump(all_samples, f)
-            
-        metadata = {
-            "num_samples": len(all_samples),
-            "model": model_name,
-            "model_type": extractor.model_type,
-            "num_layers": extractor.num_layers,
-            "hidden_dim": extractor.hidden_dim,
-            "layers_extracted": list(layer_indices.keys()),
-            "layer_indices": layer_indices,
-            "batch_size": batch_size,
-            "sample_keys": list(all_samples[0].keys()) if all_samples else [],
-            "sparse_level": sparse_level,
-            "task": task,
-            "accuracy": correct / total if total > 0 else 0.0,
-            "candidate_answers": candidate_answers(task),
-            "num_classes": len(candidate_answers(task)),
+    # ---- Metadata ----
+    metadata = {
+        "num_samples_total": len(data),
+        "num_samples_used": total,
+        "model": model_ckpt,
+        "model_type": extractor.model_type,
+        "num_layers": extractor.num_layers,
+        "hidden_dim": extractor.hidden_dim,
+        "selected_layers": selected_layers,
+        "task": task,
+        "sparse_level": float(sparse_level),
+        "accuracy": acc,
+        "files": {
+            "graphs": [f"graphs_layer_{L}.pkl" for L in selected_layers],
+            "last_tokens": [f"last_token_layer_{L}.npy" for L in selected_layers],
         }
-        
-        with open(os.path.join(output_dir, "metadata.json"), "w") as f:
-            json.dump(metadata, f, indent=2)
+    }
+    with open(os.path.join(out_dir, "metadata.json"), "w") as f:
+        json.dump(metadata, f, indent=2)
 
-        print(f"\nDataset saved to: {output_dir}")
-        print("Files created:")
-        print("  - complete_dataset.pkl")
-        print("  - metadata.json")
-        print("="*60)
-
-    return all_samples
+    print(f"\nOutput directory: {out_dir}")
+    return graphs_by_layer, last_token_by_layer, preds, refs    
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run probing clevr dataset creation")
-
-    parser.add_argument("--model_name", type=str, default="llava-hf/llava-1.5-7b-hf",
-                        help="Model checkpoint name (HuggingFace repo ID or path)")
-    parser.add_argument("--num_samples", type=int, default=2500,
-                        help="Number of samples from CLEVR val set")
-    parser.add_argument("--batch_size", type=int, default=16,
-                        help="Batch size for model forward")
-    parser.add_argument("--sparse_level", type=float, default=0.9,
-                        help="Quantile threshold for sparsifying correlation graph")
-    parser.add_argument("--task", type=str, default="color",
-                        help="Type of VQA task to filter on")
-    parser.add_argument("--device", type=str, default="cuda:0",
-                        help="Device string, e.g., 'cuda:0' or 'cpu'")
-    parser.add_argument("--output_dir", type=str, default="probing_dataset",
-                        help="Output directory for results")
-    parser.add_argument("--verbose", action="store_true",
-                        help="Print extra info for first sample")
-    parser.add_argument("--log_every", type=int, default=5,
-                        help="Log progress every N batches")
-
+    parser = argparse.ArgumentParser(description="Create CLEVR VQA probing dataset (layer-sliced, per-layer saves)")
+    parser.add_argument("--model_ckpt", type=str, default="llava-hf/llava-1.5-7b-hf")
+    parser.add_argument("--num_samples", type=int, default=2500)
+    parser.add_argument("--sparse_level", type=float, default=0.9)
+    parser.add_argument("--task", type=str, default="color")
+    parser.add_argument("--device", type=str, default="cuda:0")
+    parser.add_argument("--output_dir", type=str, default="probing_dataset")
+    parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--log_every", type=int, default=200)
+    parser.add_argument("--layer_slices", type=int, default=4)
     args = parser.parse_args()
 
     print(f"\n{'='*60}")
-    print(f"Creating dataset with model={args.model_name}, task={args.task}")
-    print(f"{'='*60}")
+    print(f"Creating CLEVR VQA dataset (layer-sliced per-layer artifacts)")
+    print(f"Model: {args.model_ckpt}")
+    print(f"Task: {args.task}")
+    print(f"{'='*60}\n")
 
-    dataset = create_clevr_dataset(
+    _ = create_clevr_dataset(
         num_samples=args.num_samples,
-        model_name=args.model_name,
+        model_ckpt=args.model_ckpt,
         output_dir=args.output_dir,
         sparse_level=args.sparse_level,
         task=args.task,
         verbose=args.verbose,
         device=args.device,
-        batch_size=args.batch_size,
         log_every=args.log_every,
+        layer_slices=args.layer_slices,
     )

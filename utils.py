@@ -2,11 +2,9 @@ import torch
 import torch.nn.functional as F
 import unicodedata as ud
 import re
+import numpy as np
 
 model_list = [
-    "llava-hf/llava-interleave-qwen-0.5b-hf", # hidden size 1024
-    "bczhou/tiny-llava-v1-hf",
-
     "llava-hf/llava-1.5-7b-hf",
     "llava-hf/llava-1.5-13b-hf",
 
@@ -18,79 +16,76 @@ model_list = [
     "Salesforce/blip2-opt-6.7b",
     "Salesforce/blip2-flan-t5-xxl", #12B
 
-    "openai/gpt-oss-20b",
-
-    "google/gemma-3-4b-it", # 2560. issue: cannot batch processing
+    "google/gemma-3-4b-it", # 2560
     "google/gemma-3-12b-it", # 3840
     "google/gemma-3-27b-it", # 3840
+
+    "OpenGVLab/InternVL3-1B-hf",
+    "OpenGVLab/InternVL3-2B-hf",
+    "OpenGVLab/InternVL3-4B-hf",
+    "OpenGVLab/InternVL3-8B-hf",
+    "OpenGVLab/InternVL3-14B-hf",
+    "OpenGVLab/InternVL3-38B-hf",
 ]
 
 
-def model_path2name(model_path):
+def model_ckpt2name(model_ckpt):
     '''Convert model path to a more user-friendly model name.'''
     
-    if model_path == "llava-hf/llava-1.5-7b-hf":
+    if model_ckpt == "llava-hf/llava-1.5-7b-hf":
         return "LLaVA-1.5-7B"
-    elif model_path == "llava-hf/llava-1.5-13b-hf":
+    elif model_ckpt == "llava-hf/llava-1.5-13b-hf":
         return "LLaVA-1.5-13B"
-    elif model_path == "Qwen/Qwen2.5-VL-3B-Instruct":
+    elif model_ckpt == "Qwen/Qwen2.5-VL-3B-Instruct":
         return "Qwen2.5-VL-3B"
-    elif model_path == "Qwen/Qwen2.5-VL-7B-Instruct":
+    elif model_ckpt == "Qwen/Qwen2.5-VL-7B-Instruct":
         return "Qwen2.5-VL-7B"
-    elif model_path == "Qwen/Qwen2.5-VL-32B-Instruct":
+    elif model_ckpt == "Qwen/Qwen2.5-VL-32B-Instruct":
         return "Qwen2.5-VL-32B"
-    elif model_path == "llava-hf/llava-1.5-13b-hf":
+    elif model_ckpt == "llava-hf/llava-1.5-13b-hf":
         return "LLaVA-1.5-13B"
-    elif model_path == "bczhou/tiny-llava-v1-hf":
-        return "Tiny-LLaVA"
-    elif model_path == "Salesforce/blip2-opt-2.7b":
+    elif model_ckpt == "Salesforce/blip2-opt-2.7b":
         return "BLIP2-OPT-2.7B"
-    elif model_path == "Salesforce/blip2-opt-6.7b":
+    elif model_ckpt == "Salesforce/blip2-opt-6.7b":
         return "BLIP2-OPT-6.7B"
-    elif model_path == "Salesforce/blip2-flan-t5-xxl":
+    elif model_ckpt == "Salesforce/blip2-flan-t5-xxl":
         return "BLIP2-FLAN-T5-XXL"
-    elif model_path == "openai/gpt-oss-20b":
-        return "GPT-OSS-20B"
-    elif model_path == "google/gemma-3-4b-it":
+    elif model_ckpt == "google/gemma-3-4b-it":
         return "Gemma-3-4B"
-    elif model_path == "google/gemma-3-12b-it":
+    elif model_ckpt == "google/gemma-3-12b-it":
         return "Gemma-3-12B"
-    elif model_path == "google/gemma-3-27b-it":
+    elif model_ckpt == "google/gemma-3-27b-it":
         return "Gemma-3-27B"
+    elif "OpenGVLab/InternVL3" in model_ckpt:
+        size = model_ckpt.split("InternVL3-")[-1].replace("-hf", "").replace("B", "B")
+        return f"InternVL3-{size}"
     else:
-        return model_path.split("/")[-1]
+        return model_ckpt.split("/")[-1]
 
 
-def caption_prompt(choice=0, add_1sent_constraint=False):
-    '''Return the caption prompt based on the choice. From short to long. range 0-2'''
-    prompts = [
-        "Describe the image.",
-        "Provide a caption for this image in one sentence.",
-        "Provide a detailed caption describing the objects, colors, and relationships in the image."
-    ]
-    
-    candidates = [
-        "Caption the image focusing on spatial positions (left, right, top, bottom).",
-        "Write a caption using only what is clearly visible. Do not guess or infer.",
-    ]
-
-    if add_1sent_constraint:
-        return prompts[choice] + " Respond with only one sentence, nothing else."
-    return prompts[choice]
-
-
-def build_1_image_prompt4vlm(base_prompt, model_type="llava"):
+def prompt_for_model(base_prompt, model_type="llava"):
     '''Return the caption prompt formatted for VLM input.'''
     if model_type == "llava":
-        return f"USER: <image>\n{base_prompt}\nASSISTANT:"
+        return f"USER: <image>\n{base_prompt} ASSISTANT:"
     elif model_type == "qwen":
         return (
-            f"<|im_start|>user\n"
-            f"<|image|>\n{base_prompt}<|im_end|>\n"
-            f"<|im_start|>assistant\n"
-        )
-    elif model_type == "blip" or model_type == "gemma":
-        return base_prompt
+        "<|im_start|>system\n"
+        "You are a helpful assistant.<|im_end|>\n"
+        "<|im_start|>user\n"
+        f"<|vision_start|><|image_pad|><|vision_end|>{base_prompt}<|im_end|>\n"
+        "<|im_start|>assistant\n"
+    )
+    elif model_type == "gemma":
+        return f"<start_of_image> {base_prompt}"
+    elif model_type == "internvl":
+        return (
+        "<|im_start|>system\n"
+        "你是书生·万象，英文名是InternVL，是由上海人工智能实验室、清华大学及多家合作单位联合开发的多模态大语言模型。<|im_end|>\n"
+        "<|im_start|>user\n"
+        "<image>\n"
+        f"{base_prompt}<|im_end|>\n"
+        "<|im_start|>assistant\n"
+    )
     else:
         raise ValueError(f"Unsupported model type for prompt: {model_type}")
 
@@ -129,18 +124,18 @@ def norm_text(s: str) -> str:
     
 
 def get_layers_dims(model, model_type):
-    if model_type == "qwen":
-        num_layers = len(model.model.layers)
+    if model_type == "qwen" :
+        num_layers = model.config.text_config.num_hidden_layers
         hidden_dim = model.config.hidden_size
     elif model_type == "llava" or model_type == "gemma":
-        num_layers = len(model.language_model.model.layers)
+        num_layers = model.config.text_config.num_hidden_layers
         hidden_dim = model.config.text_config.hidden_size
-    elif model_type == "blip":
-        num_layers = len(model.language_model.model.decoder.layers)
+    elif model_type == "internvl":
+        num_layers = model.config.text_config.num_hidden_layers
         hidden_dim = model.config.text_config.hidden_size
     else:
         raise ValueError(f"Unknown model type: {model_type}")
-    
+
     return num_layers, hidden_dim
 
 def amp_ctx():
@@ -161,6 +156,24 @@ def ensure_tokenizer_defaults(processor):
         return None
     if tok.pad_token_id is None:
         tok.pad_token_id = tok.eos_token_id
-    # IMPORTANT for batched generation on decoder-only LMs
     tok.padding_side = "left"
     return tok
+
+
+def intervene(hidden, indices, mode='mask', scale=0.5, donor=None):
+    mask = torch.zeros_like(hidden)
+    mask[:, indices] = 1
+    if mode == 'mask':
+        hidden = hidden * (1 - mask)
+    elif mode == 'scale':
+        hidden = hidden * (1 + scale * mask)
+    elif mode == 'replace' and donor is not None:
+        hidden = hidden * (1 - mask) + donor * mask
+    return hidden
+
+
+def evenly_spaced_layers(num_layers: int, layer_slices: int):
+    idxs = np.linspace(0, num_layers - 1, layer_slices + 1)
+    idxs = np.floor(idxs).astype(int)
+    idxs = np.unique(idxs)
+    return idxs.tolist()
