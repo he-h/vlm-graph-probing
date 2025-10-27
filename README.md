@@ -19,17 +19,17 @@ LLaVA, Qwen-2.5-VL, InternVL3
 
 
 | Model Name | HF Link | # LLM Layers | Hidden Dimension |
-|-------------|----------|--------------|------------------|
-| llava-hf/llava-1.5-7b-hf | [link](https://huggingface.co/llava-hf/llava-1.5-7b-hf) | 32 | 4096 |
-| llava-hf/llava-1.5-13b-hf | [link](https://huggingface.co/llava-hf/llava-1.5-13b-hf) | 40 | 5120 |
-| Qwen/Qwen2.5-VL-3B-Instruct | [link](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct) | 36 | 2048 |
-| Qwen/Qwen2.5-VL-7B-Instruct | [link](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct) | 28 | 3584 |
-| Qwen/Qwen2.5-VL-32B-Instruct | [link](https://huggingface.co/Qwen/Qwen2.5-VL-32B-Instruct) | 64 | 5120 |
-| OpenGVLab/InternVL3_5-1B-HF | [link](https://huggingface.co/OpenGVLab/InternVL3_5-1B-HF) | *not clearly documented* | *not clearly documented* |
-| OpenGVLab/InternVL3_5-2B-HF | [link](https://huggingface.co/OpenGVLab/InternVL3_5-2B-HF) | *not clearly documented* | *not clearly documented* |
-| OpenGVLab/InternVL3_5-4B-HF | [link](https://huggingface.co/OpenGVLab/InternVL3_5-4B-HF) | *not clearly documented* | *not clearly documented* |
-| OpenGVLab/InternVL3_5-8B-HF | [link](https://huggingface.co/OpenGVLab/InternVL3_5-8B-HF) | *not clearly documented* | *not clearly documented* |
-| OpenGVLab/InternVL3-14B-HF | [link](https://huggingface.co/OpenGVLab/InternVL3-14B-hf) | **48** | **5120** |
+|------------|---------|-------------|------------------|
+| llava-hf/llava-1.5-7b-hf           | [link](https://huggingface.co/llava-hf/llava-1.5-7b-hf)           | 32 | 4096  |
+| llava-hf/llava-1.5-13b-hf          | [link](https://huggingface.co/llava-hf/llava-1.5-13b-hf)          | 40 | 5120  |
+| Qwen/Qwen2.5-VL-3B-Instruct        | [link](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct)        | 36 | 2048  |
+| Qwen/Qwen2.5-VL-7B-Instruct        | [link](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct)        | 28 | 3584  |
+| Qwen/Qwen2.5-VL-32B-Instruct       | [link](https://huggingface.co/Qwen/Qwen2.5-VL-32B-Instruct)       | 64 | 5120  |
+| OpenGVLab/InternVL3-1B-HF          | [link](https://huggingface.co/OpenGVLab/InternVL3-1B-HF)          | 24 | 896  |
+| OpenGVLab/InternVL3-2B-HF          | [link](https://huggingface.co/OpenGVLab/InternVL3-2B-HF)          | 28 | 1536  |
+| OpenGVLab/InternVL3-8B-HF          | [link](https://huggingface.co/OpenGVLab/InternVL3-8B-HF)          | 28 | 3584  |
+| OpenGVLab/InternVL3-14B-HF         | [link](https://huggingface.co/OpenGVLab/InternVL3-14B-hf)         | 48 | 5120  |
+
 
 
 
