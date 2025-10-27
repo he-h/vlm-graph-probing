@@ -29,3 +29,13 @@ list of LLaVA
 | Qwen/Qwen2.5-VL-32B-Instruct       | [link](https://huggingface.co/Qwen/Qwen2.5-VL-32B-Instruct)               | 64           | 5120             |
 
 Qwen needs a chat template but LLaVA and BLIP2 just build raw prompt
+
+
+
+#### TUIDC
+
+
+
+# QA files (~70 MB)
+wget -O TDIUC.zip https://kushalkafle.com/data/TDIUC.zip
+unzip TDIUC.zip -d TDIUC

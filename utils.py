@@ -32,35 +32,32 @@ model_list = [
 def model_ckpt2name(model_ckpt):
     '''Convert model path to a more user-friendly model name.'''
     
-    if model_ckpt == "llava-hf/llava-1.5-7b-hf":
-        return "LLaVA-1.5-7B"
-    elif model_ckpt == "llava-hf/llava-1.5-13b-hf":
-        return "LLaVA-1.5-13B"
-    elif model_ckpt == "Qwen/Qwen2.5-VL-3B-Instruct":
-        return "Qwen2.5-VL-3B"
-    elif model_ckpt == "Qwen/Qwen2.5-VL-7B-Instruct":
-        return "Qwen2.5-VL-7B"
-    elif model_ckpt == "Qwen/Qwen2.5-VL-32B-Instruct":
-        return "Qwen2.5-VL-32B"
-    elif model_ckpt == "llava-hf/llava-1.5-13b-hf":
-        return "LLaVA-1.5-13B"
-    elif model_ckpt == "Salesforce/blip2-opt-2.7b":
-        return "BLIP2-OPT-2.7B"
-    elif model_ckpt == "Salesforce/blip2-opt-6.7b":
-        return "BLIP2-OPT-6.7B"
-    elif model_ckpt == "Salesforce/blip2-flan-t5-xxl":
-        return "BLIP2-FLAN-T5-XXL"
-    elif model_ckpt == "google/gemma-3-4b-it":
-        return "Gemma-3-4B"
-    elif model_ckpt == "google/gemma-3-12b-it":
-        return "Gemma-3-12B"
-    elif model_ckpt == "google/gemma-3-27b-it":
-        return "Gemma-3-27B"
-    elif "OpenGVLab/InternVL3" in model_ckpt:
-        size = model_ckpt.split("InternVL3-")[-1].replace("-hf", "").replace("B", "B")
-        return f"InternVL3-{size}"
-    else:
-        return model_ckpt.split("/")[-1]
+    mapping = {
+        "llava-hf/llava-1.5-7b-hf": "LLaVA-1.5-7B",
+        "llava-hf/llava-1.5-13b-hf": "LLaVA-1.5-13B",
+        "Qwen/Qwen2.5-VL-3B-Instruct": "Qwen2.5-VL-3B",
+        "Qwen/Qwen2.5-VL-7B-Instruct": "Qwen2.5-VL-7B",
+        "Qwen/Qwen2.5-VL-32B-Instruct": "Qwen2.5-VL-32B",
+        "Salesforce/blip2-opt-2.7b": "BLIP2-OPT-2.7B",
+        "Salesforce/blip2-opt-6.7b": "BLIP2-OPT-6.7B",
+        "Salesforce/blip2-flan-t5-xxl": "BLIP2-FLAN-T5-XXL",
+        "google/gemma-3-4b-it": "Gemma-3-4B",
+        "google/gemma-3-12b-it": "Gemma-3-12B",
+        "google/gemma-3-27b-it": "Gemma-3-27B",
+        "OpenGVLab/InternVL3-1B-hf": "InternVL3-1B",
+        "OpenGVLab/InternVL3-2B-hf": "InternVL3-2B",
+        "OpenGVLab/InternVL3-4B-hf": "InternVL3-4B",
+        "OpenGVLab/InternVL3-8B-hf": "InternVL3-8B",
+        "OpenGVLab/InternVL3-14B-hf": "InternVL3-14B",
+        "OpenGVLab/InternVL3-38B-hf": "InternVL3-38B",
+    }
+
+    # Handle direct matches first
+    if model_ckpt in mapping:
+        return mapping[model_ckpt]
+
+    # Default: return last part of the path
+    return model_ckpt.split("/")[-1]
 
 
 def prompt_for_model(base_prompt, model_type="llava"):
