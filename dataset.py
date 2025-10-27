@@ -5,8 +5,9 @@ from PIL import Image
 from utils import *
 
 CLEVR_COLORS = ['gray', 'red', 'blue', 'green', 'brown', 'purple', 'cyan', 'yellow']
+TUIDC_COLORS = ['white', 'blue', 'red', 'green', 'black', 'yellow', 'brown', 'gray', 'silver', 'orange', 'pink', 'grey'] # deleted tan purple beige gold
 CLEVR_SHAPES = ['cube', 'sphere', 'cylinder']
-CLEVR_COUNTS = [str(i) for i in range(10)]
+COUNTS = [str(i) for i in range(10)]
 
 def split_clevr_question_answer(qa_str):
     list_ = qa_str.split("?")
@@ -16,35 +17,22 @@ def split_clevr_question_answer(qa_str):
     answer = list_[1].strip().lower()
     return question, answer
 
-def constrain_clevr_prompt(question: str, task: str) -> str:
-    if task == "color":
+def constrain_clevr_prompt(question: str, category: str) -> str:
+    if category == "color":
         choices = ", ".join(CLEVR_COLORS)
         return f"{question} Answer with one word from: {choices}. Output exactly one word."
-    elif task == "counting":
+    elif category == "counting":
         return f"{question} Answer with a single integer 0-9. Output only the number."
-    elif task == "existence":
+    elif category == "existence":
         return f"{question} Answer with 'yes' or 'no' only. Output exactly one word."
-    elif task == "comparison":
+    elif category == "comparison":
         return f"{question} Answer with 'more', 'fewer', or 'equal' only. Output exactly one word."
-    elif task == "shape":
+    elif category == "shape":
         choices = ", ".join(CLEVR_SHAPES)
         return f"{question} Answer with one word from: {choices}. Output exactly one word."
     else:
         return question
 
-def candidate_answers(task: str):
-    if task == "color":
-        return CLEVR_COLORS
-    elif task == "counting":
-        return [str(i) for i in range(10)]
-    elif task == "existence":
-        return ['yes', 'no']
-    elif task == "comparison":
-        return ['more', 'fewer', 'equal']
-    elif task == "shape":
-        return CLEVR_SHAPES
-    else:
-        return []
 
 def classify_clevr_question(question, answer):
     question = question.lower()
@@ -81,7 +69,7 @@ def caption_prompt(choice=0, add_1sent_constraint=False):
     return prompts[choice]
 
 
-def prepare_vlm_data(dataset: str, num_samples: int, task: str = "color", prompt_choice: int = 1):
+def prepare_vlm_data(dataset: str, num_samples: int, category: str = "color", prompt_choice: int = 1):
     """
     Prepare a test set for Vision-Language Model evaluation (VQA or captioning).
 
@@ -90,7 +78,7 @@ def prepare_vlm_data(dataset: str, num_samples: int, task: str = "color", prompt
             - "coco"   → COCO Caption 2017 (captioning)
             - "clevr"  → CLEVR webdataset (VQA-style)
         num_samples (int): Number of samples to load.
-        task (str): For CLEVR only; specify question type
+        category (str): For CLEVR only; specify question type
                     ('color', 'counting', 'existence', 'comparison', 'shape').
 
     Returns:
@@ -119,29 +107,61 @@ def prepare_vlm_data(dataset: str, num_samples: int, task: str = "color", prompt
         for s in ds:
             try:
                 q, a = split_clevr_question_answer(s["txt"])
-                if classify_clevr_question(q, a) == task:
+                if classify_clevr_question(q, a) == category:
                     img = s["jpg"].convert("RGB")
-                    prompt = constrain_clevr_prompt(q, task)
+                    prompt = constrain_clevr_prompt(q, category)
                     samples.append([img, prompt, a])
                     cnt += 1
                     if cnt >= num_samples:
                         break
             except Exception:
                 continue
+    elif dataset == "tdiuc":
+        with open("TDIUC/Questions/OpenEnded_mscoco_val2014_questions.json", "r") as f:
+            data = json.load(f)
+        with open("TDIUC/Annotations/mscoco_val2014_annotations.json", "r") as f:
+            annote_data = json.load(f)
+
+        image_id_to_questions = {}
+        for item in data["questions"]:
+            image_id_to_questions[item["question_id"]] = item
+
+        cnt = 0
+        for ann in annote_data["annotations"]:
+            if ann["question_type"] != category:
+                continue
+            if ann["answers"][0]['answer_confidence'] != "yes":
+                continue
+            question_item = image_id_to_questions.get(ann["question_id"], None)
+            if question_item is None:
+                continue
+            image_path = f"val2014/COCO_val2014_{ann['image_id']:012d}.jpg"
+            try:
+                img = Image.open(image_path).convert("RGB")
+            except Exception:
+                continue
+            prompt = question_item["question"]
+            refs = [ans['answer'] for ans in ann['answers']]
+            if category == "counting":
+                refs = [number_word_to_digit(ans) for ans in refs]
+            samples.append([img, prompt, refs])
+            cnt += 1
+            if cnt >= num_samples:
+                break
     else:
         raise ValueError("Dataset must be 'coco' or 'clevr'.")
 
     print(f"Loaded {len(samples)} samples from {dataset.upper()}.")
     return samples
 
-def get_candidate_answers(dataset, task="color"):
+def get_candidate_answers(dataset, category="color"):
     """
-    Get candidate answers for VQA tasks.
+    Get candidate answers for VQA categorys.
 
     Args:
         dataset (str): Which dataset to load. One of:
             - "clevr"  → CLEVR webdataset (VQA-style)
-        task (str): For CLEVR only; specify question type
+        category (str): For CLEVR only; specify question type
                     ('color', 'counting', 'existence', 'comparison', 'shape').
 
     Returns:
@@ -150,11 +170,27 @@ def get_candidate_answers(dataset, task="color"):
     dataset = dataset.lower()
 
     if dataset == "clevr":
-        if task == "color":
+        if category == "color":
             return CLEVR_COLORS
-        elif task == "counting":
-            return CLEVR_COUNTS
-        elif task == "existence":
+        elif category == "counting":
+            return COUNTS
+        elif category == "existence":
             return ['yes', 'no']
     else:
         raise ValueError("Dataset must be 'clevr' for candidate answers.")
+
+def number_word_to_digit(word):
+    word = word.lower()
+    word_to_digit = {
+        "zero": 0,
+        "one": 1,
+        "two": 2,
+        "three": 3,
+        "four": 4,
+        "five": 5,
+        "six": 6,
+        "seven": 7,
+        "eight": 8,
+        "nine": 9
+    }
+    return word_to_digit.get(word, word)
