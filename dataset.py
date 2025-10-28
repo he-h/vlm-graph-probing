@@ -6,6 +6,7 @@ from utils import *
 
 CLEVR_COLORS = ['gray', 'red', 'blue', 'green', 'brown', 'purple', 'cyan', 'yellow']
 TUIDC_COLORS = ['white', 'blue', 'red', 'green', 'black', 'yellow', 'brown', 'gray', 'silver', 'orange', 'pink', 'grey'] # deleted tan purple beige gold
+TUIDC_COUNTS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine']
 CLEVR_SHAPES = ['cube', 'sphere', 'cylinder']
 COUNTS = [str(i) for i in range(10)]
 
@@ -141,10 +142,14 @@ def prepare_vlm_data(dataset: str, num_samples: int, category: str = "color", pr
             except Exception:
                 continue
             prompt = question_item["question"]
-            refs = [ans['answer'] for ans in ann['answers']]
-            if category == "counting":
-                refs = [number_word_to_digit(ans) for ans in refs]
-            samples.append([img, prompt, refs])
+            ref = ann['answers'][0]['answer'].strip().lower()
+            if category == "color" and ref.lower() not in TUIDC_COLORS:
+                continue
+            elif category == "counting":
+                if not ref in TUIDC_COUNTS:
+                    continue
+                ref = number_word_to_digit(ref)
+            samples.append([img, prompt, ref])
             cnt += 1
             if cnt >= num_samples:
                 break
