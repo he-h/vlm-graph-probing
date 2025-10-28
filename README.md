@@ -3,7 +3,7 @@
 
 
 
-## requirements
+## Requirements
 
 
 install pytorch 
@@ -32,7 +32,9 @@ LLaVA, Qwen-2.5-VL, InternVL3
 
 
 
+## Data
 
+Use `dataset.py` to load dataset. Contains Clevr, ms-coco, TUIDC.
 
 #### TUIDC
 

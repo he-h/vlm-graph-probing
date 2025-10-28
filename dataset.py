@@ -18,9 +18,12 @@ def split_clevr_question_answer(qa_str):
     answer = list_[1].strip().lower()
     return question, answer
 
-def constrain_clevr_prompt(question: str, category: str) -> str:
+def constrain_vqa_prompt(dataset, question: str, category: str) -> str:
     if category == "color":
-        choices = ", ".join(CLEVR_COLORS)
+        if dataset == "tdiuc":
+            choices = ", ".join(TUIDC_COLORS)
+        elif dataset == "clevr":
+            choices = ", ".join(CLEVR_COLORS)
         return f"{question} Answer with one word from: {choices}. Output exactly one word."
     elif category == "counting":
         return f"{question} Answer with a single integer 0-9. Output only the number."
@@ -110,7 +113,7 @@ def prepare_vlm_data(dataset: str, num_samples: int, category: str = "color", pr
                 q, a = split_clevr_question_answer(s["txt"])
                 if classify_clevr_question(q, a) == category:
                     img = s["jpg"].convert("RGB")
-                    prompt = constrain_clevr_prompt(q, category)
+                    prompt = constrain_vqa_prompt(dataset, q, category)
                     samples.append([img, prompt, a])
                     cnt += 1
                     if cnt >= num_samples:
@@ -141,7 +144,7 @@ def prepare_vlm_data(dataset: str, num_samples: int, category: str = "color", pr
                 img = Image.open(image_path).convert("RGB")
             except Exception:
                 continue
-            prompt = question_item["question"]
+            prompt = constrain_vqa_prompt(dataset, question_item["question"], category)
             ref = ann['answers'][0]['answer'].strip().lower()
             if category == "color" and ref.lower() not in TUIDC_COLORS:
                 continue
@@ -181,6 +184,11 @@ def get_candidate_answers(dataset, category="color"):
             return COUNTS
         elif category == "existence":
             return ['yes', 'no']
+    elif dataset == "tdiuc":
+        if category == "color":
+            return TUIDC_COLORS
+        elif category == "counting":
+            return COUNTS
     else:
         raise ValueError("Dataset must be 'clevr' for candidate answers.")
 
