@@ -6,3 +6,7 @@ TDIUC/
 data/
 val2014/
 __pycache__/
+
+results/
+figures/
+scripts/

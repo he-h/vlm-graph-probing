@@ -5,7 +5,7 @@ from PIL import Image
 from utils import *
 
 CLEVR_COLORS = ['gray', 'red', 'blue', 'green', 'brown', 'purple', 'cyan', 'yellow']
-TUIDC_COLORS = ['white', 'blue', 'red', 'green', 'black', 'yellow', 'brown', 'gray', 'silver', 'orange', 'pink', 'grey'] # deleted tan purple beige gold
+TUIDC_COLORS = ['white', 'blue', 'red', 'green', 'black', 'yellow', 'brown', 'gray', 'silver', 'orange'] # deleted grey pink tan purple beige gold
 TUIDC_COUNTS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine']
 CLEVR_SHAPES = ['cube', 'sphere', 'cylinder']
 COUNTS = [str(i) for i in range(10)]
@@ -73,7 +73,7 @@ def caption_prompt(choice=0, add_1sent_constraint=False):
     return prompts[choice]
 
 
-def prepare_vlm_data(dataset: str, num_samples: int, category: str = "color", prompt_choice: int = 1):
+def prepare_vlm_data(dataset: str, num_samples: int, category: str = "color", prompt_choice: int = 1, balance: bool = False):
     """
     Prepare a test set for Vision-Language Model evaluation (VQA or captioning).
 
@@ -94,7 +94,14 @@ def prepare_vlm_data(dataset: str, num_samples: int, category: str = "color", pr
     dataset = dataset.lower()
     samples = []
 
-    print(f"Preparing {num_samples} samples from {dataset.upper()} dataset...")
+    balance_str = " (balanced)" if balance else ""
+    print(f"Preparing {num_samples} samples from {dataset.upper()} dataset{balance_str}...")
+    
+    if balance:
+        candidates = get_candidate_answers(dataset, category)
+        samples_per_class = num_samples // len(candidates)
+        class_counts = {ans: 0 for ans in candidates}
+        print(f"Balancing: {samples_per_class} samples per class")
 
     if dataset == "coco":
         ds = load_dataset("lmms-lab/COCO-Caption2017", split="val")
@@ -152,7 +159,15 @@ def prepare_vlm_data(dataset: str, num_samples: int, category: str = "color", pr
                 if not ref in TUIDC_COUNTS:
                     continue
                 ref = number_word_to_digit(ref)
+            
+            # Check balance constraint
+            if balance and class_counts.get(str(ref), 0) >= samples_per_class:
+                continue
+            
             samples.append([img, prompt, ref])
+            
+            if balance:
+                class_counts[str(ref)] = class_counts.get(str(ref), 0) + 1
             cnt += 1
             if cnt >= num_samples:
                 break
@@ -207,3 +222,33 @@ def number_word_to_digit(word):
         "nine": 9
     }
     return word_to_digit.get(word, word)
+
+
+if __name__ == "__main__":
+
+    samples = prepare_vlm_data("tdiuc", 999999, category="counting", balance=True)
+    for i in range(5):
+        img, prompt, ref = samples[i]
+        print(f"Sample {i}:")
+        print(f"Prompt: {prompt}")
+        print(f"Reference Answer: {ref}")
+    
+    from collections import Counter
+    answers = [ref for _, _, ref in samples]
+    answer_counts = Counter(answers)
+    print("Answer distribution:")
+    for answer, count in answer_counts.most_common():
+        print(f"{answer}: {count}")
+        
+    samples = prepare_vlm_data("tdiuc", 999999, category="color", balance=True)
+    for i in range(5):
+        img, prompt, ref = samples[i]
+        print(f"Sample {i}:")
+        print(f"Prompt: {prompt}")
+        print(f"Reference Answer: {ref}")
+    
+    answers = [ref for _, _, ref in samples]
+    answer_counts = Counter(answers)
+    print("Answer distribution:")
+    for answer, count in answer_counts.most_common():
+        print(f"{answer}: {count}")

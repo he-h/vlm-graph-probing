@@ -3,10 +3,12 @@ import torch.nn.functional as F
 import unicodedata as ud
 import re
 import numpy as np
+import math
 
 model_list = [
     "llava-hf/llava-1.5-7b-hf",
     "llava-hf/llava-1.5-13b-hf",
+    "llava-hf/llava-v1.6-mistral-7b-hf",
 
     "Qwen/Qwen2.5-VL-3B-Instruct",
     "Qwen/Qwen2.5-VL-7B-Instruct",
@@ -35,6 +37,7 @@ def model_ckpt2name(model_ckpt):
     mapping = {
         "llava-hf/llava-1.5-7b-hf": "LLaVA-1.5-7B",
         "llava-hf/llava-1.5-13b-hf": "LLaVA-1.5-13B",
+        "llava-hf/llava-v1.6-mistral-7b-hf": "LLaVA-v1.6-Mistral-7B",
         "Qwen/Qwen2.5-VL-3B-Instruct": "Qwen2.5-VL-3B",
         "Qwen/Qwen2.5-VL-7B-Instruct": "Qwen2.5-VL-7B",
         "Qwen/Qwen2.5-VL-32B-Instruct": "Qwen2.5-VL-32B",
@@ -46,7 +49,6 @@ def model_ckpt2name(model_ckpt):
         "google/gemma-3-27b-it": "Gemma-3-27B",
         "OpenGVLab/InternVL3-1B-hf": "InternVL3-1B",
         "OpenGVLab/InternVL3-2B-hf": "InternVL3-2B",
-        "OpenGVLab/InternVL3-4B-hf": "InternVL3-4B",
         "OpenGVLab/InternVL3-8B-hf": "InternVL3-8B",
         "OpenGVLab/InternVL3-14B-hf": "InternVL3-14B",
         "OpenGVLab/InternVL3-38B-hf": "InternVL3-38B",
@@ -60,11 +62,11 @@ def model_ckpt2name(model_ckpt):
     return model_ckpt.split("/")[-1]
 
 
-def prompt_for_model(base_prompt, model_type="llava"):
+def prompt_for_model(base_prompt, model_family="llava"):
     '''Return the caption prompt formatted for VLM input.'''
-    if model_type == "llava":
+    if model_family == "llava":
         return f"USER: <image>\n{base_prompt} ASSISTANT:"
-    elif model_type == "qwen":
+    elif model_family == "qwen":
         return (
         "<|im_start|>system\n"
         "You are a helpful assistant.<|im_end|>\n"
@@ -72,9 +74,9 @@ def prompt_for_model(base_prompt, model_type="llava"):
         f"<|vision_start|><|image_pad|><|vision_end|>{base_prompt}<|im_end|>\n"
         "<|im_start|>assistant\n"
     )
-    elif model_type == "gemma":
+    elif model_family == "gemma":
         return f"<start_of_image> {base_prompt}"
-    elif model_type == "internvl":
+    elif model_family == "internvl":
         return (
         "<|im_start|>system\n"
         "你是书生·万象，英文名是InternVL，是由上海人工智能实验室、清华大学及多家合作单位联合开发的多模态大语言模型。<|im_end|>\n"
@@ -84,7 +86,7 @@ def prompt_for_model(base_prompt, model_type="llava"):
         "<|im_start|>assistant\n"
     )
     else:
-        raise ValueError(f"Unsupported model type for prompt: {model_type}")
+        raise ValueError(f"Unsupported model type for prompt: {model_family}")
 
     
 def get_activation(activation):
@@ -120,18 +122,18 @@ def norm_text(s: str) -> str:
 
     
 
-def get_layers_dims(model, model_type):
-    if model_type == "qwen" :
+def get_layers_dims(model, model_family):
+    if model_family == "qwen" :
         num_layers = model.config.text_config.num_hidden_layers
         hidden_dim = model.config.hidden_size
-    elif model_type == "llava" or model_type == "gemma":
+    elif model_family == "llava" or model_family == "gemma":
         num_layers = model.config.text_config.num_hidden_layers
         hidden_dim = model.config.text_config.hidden_size
-    elif model_type == "internvl":
+    elif model_family == "internvl":
         num_layers = model.config.text_config.num_hidden_layers
         hidden_dim = model.config.text_config.hidden_size
     else:
-        raise ValueError(f"Unknown model type: {model_type}")
+        raise ValueError(f"Unknown model type: {model_family}")
 
     return num_layers, hidden_dim
 
@@ -170,7 +172,58 @@ def intervene(hidden, indices, mode='mask', scale=0.5, donor=None):
 
 
 def evenly_spaced_layers(num_layers: int, layer_slices: int):
+    if layer_slices == -1:
+        return [int(num_layers/2 - 1)]
     idxs = np.linspace(0, num_layers - 1, layer_slices + 1)
     idxs = np.floor(idxs).astype(int)
     idxs = np.unique(idxs)
     return idxs.tolist()
+
+def get_blocks(model, model_family):
+    if model_family == "internvl" or model_family == "llava":
+        blocks = model.language_model.layers 
+    elif model_family == "qwen":
+        blocks = model.language_model.layers
+    else:
+        raise ValueError(f"Unknown model type: {model_family}")
+    return blocks
+
+def sparsify_graph(num_nodes, edge_index, edge_weight, sparse_level=0.5):
+    """
+    Sparsify by selecting top-k edges by |weight| without constructing N×N.
+    Assumes: k_target = floor((1 - sparse_level) * N * N) < E  (so there are enough edges to choose from)
+
+    - Zeros are included in the ranking but not saved.
+    - Final kept count K <= k_target (if many zeros among top-ranked).
+    
+    Args:
+        num_nodes (int): N
+        edge_index (LongTensor [2, E])
+        edge_weight (Tensor [E])
+        sparse_level (float in [0, 1]): e.g., 0.9 -> keep top 10% of N^2
+
+    Returns:
+        kept_edge_index (LongTensor [2, K])
+        kept_edge_weight (Tensor [K])
+    """
+    assert 0.0 <= sparse_level <= 1.0, f"sparse_level={sparse_level} must be within [0,1]"
+
+
+    N = int(num_nodes)
+
+    # Desired number of entries to keep based on full N^2 space 
+    k_target = int(math.floor((1.0 - float(sparse_level)) * N * N))
+
+    # Rank all existing edges by |w| (zeros included in ranking)
+    order = torch.argsort(edge_weight.abs(), descending=True)
+
+    # Select top nonzero edges in that order up to k_target
+    ordered_weights = edge_weight[order]
+    nonzero_mask_ordered = (ordered_weights != 0)
+    chosen_ordered = order[nonzero_mask_ordered][:k_target]
+
+    kept_edge_index = edge_index[:, chosen_ordered]
+    kept_edge_weight = edge_weight[chosen_ordered]
+
+    return kept_edge_index, kept_edge_weight
+
