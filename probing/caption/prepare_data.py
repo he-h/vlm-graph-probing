@@ -13,7 +13,7 @@ import argparse
 from utils import *
 from metrics import spice_scores, meteor_scores, rougeL_scores, bertscore_f1, sanitize_preds_refs
 from model import NeuronGraphExtractor as GraphExtractor
-from model import corr_graph_torch
+from model import build_corr_graph
 from dataset import prepare_vlm_data
 
 
@@ -77,12 +77,13 @@ def create_coco_dataset(
                 hs = hidden_states_all[L][0]  # [seq, hidden]
 
                 # Graph (sparse by correlation thresholding)
-                g = corr_graph_torch(hs, sparse_level=sparse_level)
+                g = build_corr_graph(hs, sparse_level=sparse_level)
                 # Convert to portable numpy for saving
+                num_nodes = g["num_nodes"]
                 edge_index = g["edge_index"].astype(np.int64)
                 edge_weight = g["edge_weight"].astype(np.float32)
 
-                graphs_by_layer[L].append([int(hs.shape[0]), edge_index, edge_weight])
+                graphs_by_layer[L].append([num_nodes, edge_index, edge_weight])
 
                 # Last-token vector from this layer
                 last_vec = hs[-1, :].contiguous().detach().cpu().numpy().astype(np.float32)  # [hidden]
@@ -154,7 +155,7 @@ def create_coco_dataset(
         "num_samples_with_captions": N,
         "missing_captions": missing_captions,
         "model": model_ckpt,
-        "model_type": extractor.model_type,
+        "model_family": extractor.model_family,
         "num_layers": extractor.num_layers,
         "hidden_dim": extractor.hidden_dim,
         "selected_layers": selected_layers,

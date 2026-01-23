@@ -73,7 +73,8 @@ def caption_prompt(choice=0, add_1sent_constraint=False):
     return prompts[choice]
 
 
-def prepare_vlm_data(dataset: str, num_samples: int, category: str = "color", prompt_choice: int = 1, balance: bool = False):
+def prepare_vlm_data(dataset: str, num_samples: int, category: str = "color", prompt_choice: int = 1, balance: bool = False,
+                    skip_non_multiple_choice: bool = False) -> list:
     """
     Prepare a test set for Vision-Language Model evaluation (VQA or captioning).
 
@@ -119,6 +120,10 @@ def prepare_vlm_data(dataset: str, num_samples: int, category: str = "color", pr
             try:
                 q, a = split_clevr_question_answer(s["txt"])
                 if classify_clevr_question(q, a) == category:
+                    if balance:
+                        if class_counts.get(a, 0) >= samples_per_class:
+                            continue
+                        class_counts[a] = class_counts.get(a, 0) + 1
                     img = s["jpg"].convert("RGB")
                     prompt = constrain_vqa_prompt(dataset, q, category)
                     samples.append([img, prompt, a])
@@ -171,6 +176,30 @@ def prepare_vlm_data(dataset: str, num_samples: int, category: str = "color", pr
             cnt += 1
             if cnt >= num_samples:
                 break
+    elif dataset == 'mmmu':
+        subjects = [
+            'Accounting', 'Agriculture', 'Architecture_and_Engineering', 'Art', 
+            'Art_Theory', 'Basic_Medical_Science', 'Biology', 'Chemistry', 
+            'Clinical_Medicine', 'Computer_Science', 'Design', 
+            'Diagnostics_and_Laboratory_Medicine', 'Economics', 'Electronics', 
+            'Energy_and_Power', 'Finance', 'Geography', 'History', 'Literature', 
+            'Manage', 'Marketing', 'Materials', 'Math', 'Mechanical_Engineering', 
+            'Music', 'Pharmacy', 'Physics', 'Psychology', 'Public_Health', 'Sociology'
+        ]
+        non_multiple_choice_cnt = 0
+        for subject in subjects:
+            ds = load_dataset('MMMU/MMMU', subject, split='validation')
+            for s in ds:
+                # print(s['question'], s['options'])
+                if skip_non_multiple_choice:
+                    if s['question_type'] != 'multiple-choice':
+                        print("Skipping non-multiple-choice question")
+                        print(s['question_type'], s['question'])
+                        non_multiple_choice_cnt += 1
+        cnt = 0
+        print(f"Skipped {non_multiple_choice_cnt} non-multiple-choice questions.")
+        print(ds.features)
+        # for s in ds:
     else:
         raise ValueError("Dataset must be 'coco' or 'clevr'.")
 
@@ -226,29 +255,32 @@ def number_word_to_digit(word):
 
 if __name__ == "__main__":
 
-    samples = prepare_vlm_data("tdiuc", 999999, category="counting", balance=True)
-    for i in range(5):
-        img, prompt, ref = samples[i]
-        print(f"Sample {i}:")
-        print(f"Prompt: {prompt}")
-        print(f"Reference Answer: {ref}")
+    samples = prepare_vlm_data('mmmu', 900)
+
+
+    # samples = prepare_vlm_data("tdiuc", 999999, category="counting", balance=True)
+    # for i in range(5):
+    #     img, prompt, ref = samples[i]
+    #     print(f"Sample {i}:")
+    #     print(f"Prompt: {prompt}")
+    #     print(f"Reference Answer: {ref}")
     
-    from collections import Counter
-    answers = [ref for _, _, ref in samples]
-    answer_counts = Counter(answers)
-    print("Answer distribution:")
-    for answer, count in answer_counts.most_common():
-        print(f"{answer}: {count}")
+    # from collections import Counter
+    # answers = [ref for _, _, ref in samples]
+    # answer_counts = Counter(answers)
+    # print("Answer distribution:")
+    # for answer, count in answer_counts.most_common():
+    #     print(f"{answer}: {count}")
         
-    samples = prepare_vlm_data("tdiuc", 999999, category="color", balance=True)
-    for i in range(5):
-        img, prompt, ref = samples[i]
-        print(f"Sample {i}:")
-        print(f"Prompt: {prompt}")
-        print(f"Reference Answer: {ref}")
+    # samples = prepare_vlm_data("tdiuc", 999999, category="color", balance=True)
+    # for i in range(5):
+    #     img, prompt, ref = samples[i]
+    #     print(f"Sample {i}:")
+    #     print(f"Prompt: {prompt}")
+    #     print(f"Reference Answer: {ref}")
     
-    answers = [ref for _, _, ref in samples]
-    answer_counts = Counter(answers)
-    print("Answer distribution:")
-    for answer, count in answer_counts.most_common():
-        print(f"{answer}: {count}")
+    # answers = [ref for _, _, ref in samples]
+    # answer_counts = Counter(answers)
+    # print("Answer distribution:")
+    # for answer, count in answer_counts.most_common():
+    #     print(f"{answer}: {count}")

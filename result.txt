@@ -1,0 +1,169 @@
+
+
+internvl 1b
+5% 
+
+color 82
+
+
+Layer 0: 82.00%
+Layer 5: 16.00%
+Layer 11: 32.00%
+Layer 17: 41.00%
+Layer 23: 86.00%
+
+
+second
+
+Layer 0: 80.90%
+Layer 5: 11.70%
+Layer 11: 26.10%
+Layer 17: 44.60%
+Layer 23: 77.90%
+
+Layer 0: 84.00%
+Layer 5: 35.00%
+Layer 11: 23.00%
+Layer 17: 82.00%
+Layer 23: 82.00%
+
+
+
+
+counting 67
+
+last token hidden space
+Layer 0: 67.00%
+Layer 5: 39.00%
+Layer 11: 32.00%
+Layer 17: 61.00%
+Layer 23: 65.00%
+
+second
+Layer 0: 62.60%
+Layer 5: 35.60%
+Layer 11: 33.10%
+Layer 17: 55.50%
+Layer 23: 61.00%
+
+Layer 0: 52.00%
+Layer 5: 40.00%
+Layer 11: 35.00%
+Layer 17: 68.00%
+Layer 23: 67.00%
+
+second
+Layer 0: 54.40%
+Layer 5: 30.20%
+Layer 11: 28.00%
+Layer 17: 61.80%
+Layer 23: 63.00%
+
+qwen 3b color 87 counting 60
+
+
+Layer 0: 85.00%
+Layer 8: 18.00%
+Layer 17: 21.00%
+Layer 26: 22.00%
+Layer 35: 77.00%
+
+Layer 0: 65.00%
+Layer 8: 85.00%
+Layer 17: 85.00%
+Layer 26: 86.00%
+Layer 35: 84.00%
+
+counting
+
+Layer 0: 58.00%
+Layer 8: 22.00%
+Layer 17: 27.00%
+Layer 26: 44.00%
+Layer 35: 63.00%
+
+Layer 0: 49.00%
+Layer 8: 58.00%
+Layer 17: 59.00%
+Layer 26: 56.00%
+Layer 35: 59.00%
+
+
+
+
+
+
+
+
+
+
+
+internvl 1000
+
+color 
+
+Layer 0: 80.90%
+Layer 5: 11.70%
+Layer 11: 26.10%
+Layer 17: 44.60%
+Layer 23: 77.90%
+
+Layer 0: 80.60%
+Layer 5: 35.50%
+Layer 11: 24.10%
+Layer 17: 78.70%
+Layer 23: 81.40%
+
+random
+Layer 0: 81.10%
+Layer 5: 74.30%
+Layer 11: 78.40%
+Layer 17: 80.30%
+Layer 23: 80.90%
+
+counting
+last token
+Layer 0: 62.60%
+Layer 5: 35.60%
+Layer 11: 33.10%
+Layer 17: 55.50%
+Layer 23: 61.00%
+
+
+graph
+Layer 0: 54.40%
+Layer 5: 30.20%
+Layer 11: 28.00%
+Layer 17: 61.80%
+Layer 23: 63.00%
+
+random
+Layer 0: 63.10%
+Layer 5: 59.70%
+Layer 11: 60.30%
+Layer 17: 63.10%
+Layer 23: 62.60%
+
+
+
+clevr
+
+internvl
+
+0 0.1 0.5 2.0 -0.5 -1 -0.1 
+
+1
+72.9 73 74.2 74.1 69.4 63.2 72.4
+2
+30.7 41.5 70.9 71.3 64.6  54  27.60
+
+5
+99.6 99.6 99.8 99.8 99.7 99.3 99.7 
+10
+13.9  16  99  99.5  12.6 13.7 13.5 
+
+
+
+17.4 29.7 73 
+
+14 99.7 99.8

@@ -61,7 +61,7 @@ class GraphExtractor:
         
         # Determine model type and load accordingly
         if "qwen" in model_name.lower():
-            self.model_type = "qwen"
+            self.model_family = "qwen"
             self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
                 model_name,
                 torch_dtype=torch.float16,
@@ -70,7 +70,7 @@ class GraphExtractor:
             self.processor = AutoProcessor.from_pretrained(model_name)
             self.model.config.output_hidden_states = True
         else:
-            self.model_type = "llava"
+            self.model_family = "llava"
             self.model = LlavaForConditionalGeneration.from_pretrained(
                 model_name,
                 torch_dtype=torch.float16,
@@ -81,7 +81,7 @@ class GraphExtractor:
         self.model.eval()
         
         # Get model configuration
-        if self.model_type == "qwen":
+        if self.model_family == "qwen":
             # Adjust for Qwen model structure
             self.num_layers = len(self.model.model.layers) if hasattr(self.model, 'model') else 24
             self.hidden_dim = self.model.config.hidden_size if hasattr(self.model.config, 'hidden_size') else 2048
@@ -90,13 +90,13 @@ class GraphExtractor:
             self.hidden_dim = self.model.config.text_config.hidden_size
         
         print(f"Model loaded: {model_name}")
-        print(f"Model type: {self.model_type}")
+        print(f"Model type: {self.model_family}")
         print(f"Layers: {self.num_layers}, Hidden dims: {self.hidden_dim}")
     
     def extract_hidden_states(self, image, text_prompt="USER: <image>\nCaption: ASSISTANT:"):
         """Extract hidden states from all layers during forward pass"""
         # Adjust prompt for Qwen if needed
-        if self.model_type == "qwen":
+        if self.model_family == "qwen":
             text_prompt = "<|im_start|>user\n<image>\nProvide a caption for this image.<|im_end|>\n<|im_start|>assistant\n"
         
         inputs = self.processor(text=text_prompt, images=image, return_tensors="pt").to(self.device)
@@ -137,7 +137,7 @@ class GraphExtractor:
     
     def generate_caption(self, image, max_new_tokens=50):
         """Generate caption for the image"""
-        if self.model_type == "qwen":
+        if self.model_family == "qwen":
             prompt = "<|im_start|>user\n<image>\nProvide a caption for this image.<|im_end|>\n<|im_start|>assistant\n"
         else:
             prompt = "USER: <image>\nCaption: ASSISTANT:"
@@ -157,7 +157,7 @@ class GraphExtractor:
         generated_text = self.processor.decode(output_ids[0], skip_special_tokens=True)
         
         # Extract caption based on model type
-        if self.model_type == "qwen":
+        if self.model_family == "qwen":
             if "assistant" in generated_text:
                 caption = generated_text.split("assistant")[-1].strip()
             else:
@@ -295,7 +295,7 @@ def create_dataset(
     missing_captions = 0
     
     # Set prompt based on model type
-    if extractor.model_type == "qwen":
+    if extractor.model_family == "qwen":
         graph_extraction_prompt = "<|im_start|>user\n<image>\nCaption:<|im_end|>\n<|im_start|>assistant\n"
     else:
         graph_extraction_prompt = "USER: <image>\nCaption: ASSISTANT:"
@@ -407,7 +407,7 @@ def create_dataset(
         metadata = {
             'num_samples': len(all_samples),
             'model': model_name,
-            'model_type': extractor.model_type,
+            'model_family': extractor.model_family,
             'sparsity': sparsity,
             'layers_extracted': list(layer_indices.keys()),
             'metrics': ['bleu4', 'meteor', 'cider'],

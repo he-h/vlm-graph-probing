@@ -49,7 +49,7 @@ def bleu4_scores(preds: List[str], refs: List[List[str]]) -> List[float]:
 def bertscore_f1(
     preds: List[str], 
     refs: List[List[str]], 
-    model_type: str = "roberta-large"
+    model_family: str = "roberta-large"
 ) -> List[float]:
     """Per-sample BERTScore F1 (best among references)."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -60,7 +60,7 @@ def bertscore_f1(
         P, R, F1 = bertscore_score(
             cands=cands,
             refs=ref_list,
-            model_type=model_type,
+            model_family=model_family,
             lang="en",
             rescale_with_baseline=True,
             verbose=False,

@@ -11,7 +11,7 @@ import pickle
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
-from model import GCNRegressor
+from model import GCNPredictor as GCNRegressor
 
 
 torch.manual_seed(42)

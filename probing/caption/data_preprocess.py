@@ -66,7 +66,7 @@ class GraphExtractor:
         self.model_name = model_name
         
         if "qwen" in model_name.lower():
-            self.model_type = "qwen"
+            self.model_family = "qwen"
             self.processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
             self.model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
                 model_name,
@@ -78,7 +78,7 @@ class GraphExtractor:
             self.hidden_dim = self.model.config.hidden_size  # Should be 2048 for 3B model
             self.num_layers = self.model.config.num_hidden_layers  # Should be 36 for 3B model
         else:
-            self.model_type = "llava"
+            self.model_family = "llava"
             self.model = LlavaForConditionalGeneration.from_pretrained(
                 model_name,
                 torch_dtype=torch.float16,
@@ -91,12 +91,12 @@ class GraphExtractor:
         self.model.eval()
         
         print(f"Model loaded: {model_name}")
-        print(f"Model type: {self.model_type}")
+        print(f"Model type: {self.model_family}")
         print(f"Layers: {self.num_layers}, Hidden dims: {self.hidden_dim}")
 
     def extract_hidden_states(self, image, text_prompt=None):
         """Extract hidden states from all layers during forward pass"""
-        if self.model_type == "qwen":
+        if self.model_family == "qwen":
             # Proper message format for Qwen2.5-VL
             messages = [
                 {
@@ -154,7 +154,7 @@ class GraphExtractor:
             hidden_states = outputs.hidden_states
         
         if hidden_states is None:
-            raise RuntimeError(f"hidden_states is None for {self.model_type}")
+            raise RuntimeError(f"hidden_states is None for {self.model_family}")
             
         # Convert to numpy - handle different possible shapes
         hidden_states_np = []
@@ -193,7 +193,7 @@ class GraphExtractor:
 
     def generate_caption(self, image, max_new_tokens=50):
         """Generate caption for the image"""
-        if self.model_type == "qwen":
+        if self.model_family == "qwen":
             messages = [
                 {
                     "role": "user",
@@ -231,7 +231,7 @@ class GraphExtractor:
             )
         
         # Decode - handle batch dimension
-        if self.model_type == "qwen":
+        if self.model_family == "qwen":
             generated_text = self.processor.decode(output_ids[0], skip_special_tokens=True)
             # Extract just the caption part after the prompt
             if "caption" in generated_text.lower():
@@ -378,7 +378,7 @@ def create_dataset(
     missing_captions = 0
     
     # Set prompt based on model type
-    if extractor.model_type == "qwen":
+    if extractor.model_family == "qwen":
         graph_extraction_prompt = "<|im_start|>user\n<image>\nCaption:<|im_end|>\n<|im_start|>assistant\n"
     else:
         graph_extraction_prompt = "USER: <image>\nCaption: ASSISTANT:"
@@ -488,7 +488,7 @@ def create_dataset(
         metadata = {
             'num_samples': len(all_samples),
             'model': model_name,
-            'model_type': extractor.model_type,
+            'model_family': extractor.model_family,
             'sparsity': sparsity,
             'layers_extracted': list(layer_indices.keys()),
             'metrics': ['bleu4', 'meteor', 'cider'],

@@ -13,7 +13,7 @@ import argparse
 from utils import *
 from metrics import spice_scores, meteor_scores, rougeL_scores, bertscore_f1, sanitize_preds_refs
 from model import NeuronGraphExtractor as GraphExtractor
-from model import corr_graph_torch
+from model import build_corr_graph
 
 def split_clevr_question_answer(qa_str):
     list_ = qa_str.split("?")
@@ -184,7 +184,7 @@ def create_clevr_layer_analysis(
                 hs = hidden_states_all[layer_idx][0]  # [seq, hidden]
                 
                 # 1. Compute correlation graph and extract degrees
-                corr_graph = corr_graph_torch(hs, sparse_level=sparse_level)
+                corr_graph = build_corr_graph(hs, sparse_level=sparse_level)
                 degrees = compute_node_degrees(corr_graph)
                 
                 # Ensure correct shape
@@ -250,7 +250,7 @@ def create_clevr_layer_analysis(
     metadata = {
         "num_samples": samples_processed,
         "model": model_name,
-        "model_type": extractor.model_type,
+        "model_family": extractor.model_family,
         "num_layers": num_layers,
         "hidden_dim": hidden_dim,
         "sparse_level": sparse_level,
