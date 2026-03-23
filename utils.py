@@ -14,6 +14,7 @@ model_list = [
     "Qwen/Qwen2.5-VL-7B-Instruct",
     "Qwen/Qwen2.5-VL-32B-Instruct",
 
+
     "Salesforce/blip2-opt-2.7b",
     "Salesforce/blip2-opt-6.7b",
     "Salesforce/blip2-flan-t5-xxl", #12B

@@ -1,4 +1,4 @@
-./data/
+data/
 todo.txt
 tmp.sh
 
@@ -10,3 +10,6 @@ __pycache__/
 results/
 figures/
 scripts/
+nohup.out
+result.txt
+plot/
