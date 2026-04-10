@@ -1,8 +1,8 @@
-# Visual-Language Model Graph Probing
+# Structural Graph Probing of Vision–Language Models
 
-Code for the paper on graph-based probing and intervention experiments on vision-language models.
+Code for the paper [Structural Graph Probing of Vision–Language Models](https://arxiv.org/abs/2603.27070).
 
-![Overview](assets/overview.pdf)
+Overview
 
 ## Repository Layout
 
@@ -14,14 +14,16 @@ Code for the paper on graph-based probing and intervention experiments on vision
 
 **Experiment scripts** (under `probing/`):
 
-| Script | Description |
-| --- | --- |
-| `extract_graphs.py` | Extract hidden states, build correlation graphs, save per-layer artifacts |
-| `degree_analysis.py` | Layer-wise degree and activation analysis across all layers |
-| `hub_neurons.py` | Identify hub neurons by degree and activation frequency |
-| `intervene_neuron.py` | Neuron-level ablation / scaling intervention experiments |
-| `intervene_edge.py` | Edge-level (neuron-pair) intervention experiments |
-| `modality_corr.py` | Cross-modality (visual-text) token correlation analysis |
+
+| Script                | Description                                                               |
+| --------------------- | ------------------------------------------------------------------------- |
+| `extract_graphs.py`   | Extract hidden states, build correlation graphs, save per-layer artifacts |
+| `degree_analysis.py`  | Layer-wise degree and activation analysis across all layers               |
+| `hub_neurons.py`      | Identify hub neurons by degree and activation frequency                   |
+| `intervene_neuron.py` | Neuron-level ablation / scaling intervention experiments                  |
+| `intervene_edge.py`   | Edge-level (neuron-pair) intervention experiments                         |
+| `modality_corr.py`    | Cross-modality (visual-text) token correlation analysis                   |
+
 
 **Scripts:**
 
@@ -43,21 +45,25 @@ pip install -r requirements.txt
 
 ## Supported Models
 
-| Model | Hugging Face |
-| --- | --- |
-| LLaVA-1.5-7B | [llava-hf/llava-1.5-7b-hf](https://huggingface.co/llava-hf/llava-1.5-7b-hf) |
+
+| Model         | Hugging Face                                                                      |
+| ------------- | --------------------------------------------------------------------------------- |
+| LLaVA-1.5-7B  | [llava-hf/llava-1.5-7b-hf](https://huggingface.co/llava-hf/llava-1.5-7b-hf)       |
 | Qwen2.5-VL-3B | [Qwen/Qwen2.5-VL-3B-Instruct](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct) |
-| InternVL3-1B | [OpenGVLab/InternVL3-1B-hf](https://huggingface.co/OpenGVLab/InternVL3-1B-hf) |
+| InternVL3-1B  | [OpenGVLab/InternVL3-1B-hf](https://huggingface.co/OpenGVLab/InternVL3-1B-hf)     |
+
 
 See `utils.py` for the full list of supported checkpoints.
 
 ## Data Setup
 
-| Dataset | Source | Setup |
-| --- | --- | --- |
-| **CLEVR** | HuggingFace | Loaded automatically via `datasets` (`laion/clevr-webdataset`). No manual download needed. |
-| **COCO Captions** | HuggingFace | Loaded automatically via `datasets` (`lmms-lab/COCO-Caption2017`). No manual download needed. |
-| **TDIUC** | Manual download | Download and place under `data/TDIUC/`. Also requires COCO val2014 images under `data/val2014/`. |
+
+| Dataset           | Source                                                         | Setup                                                                                            |
+| ----------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| **CLEVR**         | HuggingFace                                                    | Loaded automatically via `datasets` (`laion/clevr-webdataset`). No manual download needed.       |
+| **COCO Captions** | HuggingFace                                                    | Loaded automatically via `datasets` (`lmms-lab/COCO-Caption2017`). No manual download needed.    |
+| **TDIUC**         | [Manual download](https://kushalkafle.com/projects/tdiuc.html) | Download and place under `data/TDIUC/`. Also requires COCO val2014 images under `data/val2014/`. |
+
 
 For TDIUC, the expected directory structure is:
 
@@ -106,10 +112,9 @@ bash scripts/06_modality_corr.sh
 
 All scripts default to **InternVL3-1B** on **CLEVR color** with `cuda:0`. Edit the variables at the top of each script to change the model, dataset, category, or GPU device.
 
-
 ## Citation
 
-If you use this repository, please cite the corresponding paper.
+If you use this repository, please consider cite our paper.
 
 ```bibtex
 @article{he2026structural,
