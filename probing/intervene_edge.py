@@ -9,16 +9,21 @@ This script:
    - corr=0: Make neuron_j random (uncorrelated with neuron_i)
 """
 
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 import torch
 import numpy as np
 from tqdm import tqdm
-import pickle
 import os
 import json
 import argparse
-from collections import defaultdict
 
-from utils import *
+from utils import model_ckpt2name, evenly_spaced_layers, get_blocks
 from model import NeuronGraphExtractor as GraphExtractor
 from model import compute_corr_matrix
 from dataset import prepare_vlm_data, get_candidate_answers
@@ -306,8 +311,8 @@ def run_edge_intervention(
                 total = 0
                 
                 for sample_idx, (image, prompt, answer) in enumerate(tqdm(data, desc=f"L{L}-{direction}-{intervention_type}", disable=False)):
+                    hook = None
                     try:
-                        # Create and register hook with direction parameter
                         hook = EdgeInterventionHook(
                             edge_pairs, 
                             intervention_type=intervention_type, 
@@ -334,7 +339,7 @@ def run_edge_intervention(
                         total += 1
                         
                     except Exception as e:
-                        if hook:
+                        if hook is not None:
                             hook.remove()
                         continue
                 

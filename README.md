@@ -1,54 +1,125 @@
 # Visual-Language Model Graph Probing
 
+Code for the paper on graph-based probing and intervention experiments on vision-language models.
 
+![Overview](assets/overview.png)
 
+## Repository Layout
 
-## Requirements
+**Core modules:**
 
+- `model.py` — model loading, hidden-state extraction, correlation graph construction
+- `dataset.py` — dataset loading and VQA prompt construction
+- `utils.py` — shared helpers, constants, and text sanitization utilities
 
-install pytorch 
-requirements
-follow the download process in here https://github.com/Labbeti/aac-metrics
+**Experiment scripts** (under `probing/`):
 
-pip install requirements.txt 
+| Script | Description |
+| --- | --- |
+| `extract_graphs.py` | Extract hidden states, build correlation graphs, save per-layer artifacts |
+| `degree_analysis.py` | Layer-wise degree and activation analysis across all layers |
+| `hub_neurons.py` | Identify hub neurons by degree and activation frequency |
+| `intervene_neuron.py` | Neuron-level ablation / scaling intervention experiments |
+| `intervene_edge.py` | Edge-level (neuron-pair) intervention experiments |
+| `modality_corr.py` | Cross-modality (visual-text) token correlation analysis |
 
+**Scripts:**
 
-VLM selection:
-LLaVA, Qwen-2.5-VL, InternVL3
+- `scripts/examples/` — ready-to-run example scripts for each pipeline step (start here)
+- `scripts/verify/` — smoke tests for quick verification
 
-
-
-| Model Name | HF Link | # LLM Layers | Hidden Dimension |
-|------------|---------|-------------|------------------|
-| llava-hf/llava-1.5-7b-hf           | [link](https://huggingface.co/llava-hf/llava-1.5-7b-hf)           | 32 | 4096  |
-| llava-hf/llava-1.5-13b-hf          | [link](https://huggingface.co/llava-hf/llava-1.5-13b-hf)          | 40 | 5120  |
-| Qwen/Qwen2.5-VL-3B-Instruct        | [link](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct)        | 36 | 2048  |
-| Qwen/Qwen2.5-VL-7B-Instruct        | [link](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct)        | 28 | 3584  |
-| Qwen/Qwen2.5-VL-32B-Instruct       | [link](https://huggingface.co/Qwen/Qwen2.5-VL-32B-Instruct)       | 64 | 5120  |
-| OpenGVLab/InternVL3-1B-HF          | [link](https://huggingface.co/OpenGVLab/InternVL3-1B-HF)          | 24 | 896  |
-| OpenGVLab/InternVL3-2B-HF          | [link](https://huggingface.co/OpenGVLab/InternVL3-2B-HF)          | 28 | 1536  |
-| OpenGVLab/InternVL3-8B-HF          | [link](https://huggingface.co/OpenGVLab/InternVL3-8B-HF)          | 28 | 3584  |
-| OpenGVLab/InternVL3-14B-HF         | [link](https://huggingface.co/OpenGVLab/InternVL3-14B-hf)         | 48 | 5120  |
-
-
-
-## Data
-
-Use `dataset.py` to load dataset. Contains Clevr, ms-coco, TUIDC.
-
-#### TUIDC
-
+## Environment Setup
 
 ```bash
-# QA files (~70 MB)
-wget -O TDIUC.zip https://kushalkafle.com/data/TDIUC.zip
-unzip TDIUC.zip 
-
-# coco 2014 val (~6GB)
-wget http://images.cocodataset.org/zips/val2014.zip
-unzip val2014.zip
+conda create -n vlm-graph-probing python=3.10
+conda activate vlm-graph-probing
+pip install -r requirements.txt
 ```
 
+**Notes:**
 
-Both TDIUC and val2014 should be available inside your repository.
+- A working PyTorch installation compatible with your CUDA setup is required for GPU experiments.
+- Some Hugging Face model checkpoints may require authentication or acceptance of model terms.
 
+## Supported Models
+
+| Model | Hugging Face |
+| --- | --- |
+| LLaVA-1.5-7B | [llava-hf/llava-1.5-7b-hf](https://huggingface.co/llava-hf/llava-1.5-7b-hf) |
+| Qwen2.5-VL-3B | [Qwen/Qwen2.5-VL-3B-Instruct](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct) |
+| InternVL3-1B | [OpenGVLab/InternVL3-1B-hf](https://huggingface.co/OpenGVLab/InternVL3-1B-hf) |
+
+See `utils.py` for the full list of supported checkpoints.
+
+## Data Setup
+
+| Dataset | Source | Setup |
+| --- | --- | --- |
+| **CLEVR** | HuggingFace | Loaded automatically via `datasets` (`laion/clevr-webdataset`). No manual download needed. |
+| **COCO Captions** | HuggingFace | Loaded automatically via `datasets` (`lmms-lab/COCO-Caption2017`). No manual download needed. |
+| **TDIUC** | Manual download | Download and place under `data/TDIUC/`. Also requires COCO val2014 images under `data/val2014/`. |
+
+For TDIUC, the expected directory structure is:
+
+```
+data/
+├── TDIUC/
+│   ├── Questions/
+│   │   └── OpenEnded_mscoco_val2014_questions.json
+│   └── Annotations/
+│       └── mscoco_val2014_annotations.json
+└── val2014/
+    └── COCO_val2014_*.jpg
+```
+
+You can override dataset locations via environment variables or CLI flags:
+
+```bash
+export VLM_GRAPH_DATA_ROOT=/path/to/data
+export VLM_GRAPH_TDIUC_ROOT=/path/to/data/TDIUC
+export VLM_GRAPH_COCO_VAL_ROOT=/path/to/data/val2014
+```
+
+## Quickstart
+
+Ready-to-run example scripts are provided under `scripts/`. Each script has configurable variables (model, dataset, device, etc.) at the top. Run them in order:
+
+```bash
+# Step 1: Extract hidden states and build correlation graphs
+bash scripts/01_extract_graphs.sh
+
+# Step 2: Layer-wise degree and activation analysis
+bash scripts/02_degree_analysis.sh
+
+# Step 3: Identify hub neurons
+bash scripts/03_hub_neurons.sh
+
+# Step 4: Neuron-level intervention (requires step 3 output)
+bash scripts/04_intervene_neuron.sh
+
+# Step 5: Edge-level intervention
+bash scripts/05_intervene_edge.sh
+
+# Step 6: Cross-modality correlation analysis
+bash scripts/06_modality_corr.sh
+```
+
+All scripts default to **InternVL3-1B** on **CLEVR color** with `cuda:0`. Edit the variables at the top of each script to change the model, dataset, category, or GPU device.
+
+
+## Citation
+
+If you use this repository, please cite the corresponding paper.
+
+```bibtex
+@article{he2026structural,
+  title={Structural Graph Probing of Vision-Language Models},
+  author={He, Haoyu and Zhuo, Yue and Zheng, Yu and Wang, Qi R},
+  journal={arXiv preprint arXiv:2603.27070},
+  year={2026}
+}
+```
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.

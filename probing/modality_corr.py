@@ -1,9 +1,16 @@
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 import torch
 import numpy as np
 from tqdm import tqdm
 import os, argparse
 
-from utils import *
+from utils import model_ckpt2name
 from model import NeuronGraphExtractor as GraphExtractor
 from model import compute_corr_matrix
 from dataset import prepare_vlm_data
@@ -16,6 +23,9 @@ def compute_modality_correlations(
     device="cuda:0",
     category="color",
     output_dir="results/modality_correlation",
+    data_root=None,
+    tdiuc_root=None,
+    coco_val_root=None,
 ):
     """
     Compute token-token correlations within and across modalities for all layers.
@@ -32,7 +42,10 @@ def compute_modality_correlations(
     # ---- Load data ----
     print("=" * 60)
     print(f"Preparing {dataset} samples, category={category}")
-    data = prepare_vlm_data(dataset=dataset, num_samples=num_samples, category=category, balance=True)
+    data = prepare_vlm_data(
+        dataset=dataset, num_samples=num_samples, category=category, balance=True,
+        data_root=data_root, tdiuc_root=tdiuc_root, coco_val_root=coco_val_root,
+    )
     if not data:
         print("ERROR: No samples loaded!")
         return
@@ -143,7 +156,6 @@ def compute_modality_correlations(
     os.makedirs(output_dir, exist_ok=True)
     output_file = f"{output_dir}/modality_corr_{model_prefix}_{dataset}_{category}.npy"
     
-    # Create structured array with all data
     results = {
         'vv_mean': vv_mean,
         'vv_std': vv_std,
@@ -151,14 +163,11 @@ def compute_modality_correlations(
         'tt_std': tt_std,
         'vt_mean': vt_mean,
         'vt_std': vt_std,
-        'num_layers': num_layers,
-        'num_samples': len(data),
-        'model': model_ckpt,
-        'dataset': dataset,
-        'category': category,
+        'num_layers': np.array(num_layers),
+        'num_samples': np.array(len(data)),
     }
     
-    np.save(output_file, results)
+    np.savez(output_file, **results)
     
     print(f"\n{'='*60}")
     print(f"Results saved to: {output_file}")
@@ -175,6 +184,9 @@ if __name__ == "__main__":
     parser.add_argument("--category", type=str, default="color")
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--output_dir", type=str, default="results/modality_correlation")
+    parser.add_argument("--data_root", type=str, default=None, help="Base data directory.")
+    parser.add_argument("--tdiuc_root", type=str, default=None, help="Path to TDIUC dataset root.")
+    parser.add_argument("--coco_val_root", type=str, default=None, help="Path to COCO val2014 images.")
     
     args = parser.parse_args()
     
@@ -192,4 +204,7 @@ if __name__ == "__main__":
         device=args.device,
         category=args.category,
         output_dir=args.output_dir,
+        data_root=args.data_root,
+        tdiuc_root=args.tdiuc_root,
+        coco_val_root=args.coco_val_root,
     )

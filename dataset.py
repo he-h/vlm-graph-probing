@@ -1,14 +1,29 @@
+import argparse
 import json
+import os
+
 from datasets import load_dataset
 from PIL import Image
 
-from utils import *
 
 CLEVR_COLORS = ['gray', 'red', 'blue', 'green', 'brown', 'purple', 'cyan', 'yellow']
-TUIDC_COLORS = ['white', 'blue', 'red', 'green', 'black', 'yellow', 'brown', 'gray', 'silver', 'orange'] # deleted grey pink tan purple beige gold
-TUIDC_COUNTS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine']
+TDIUC_COLORS = ['white', 'blue', 'red', 'green', 'black', 'yellow', 'brown', 'gray', 'silver', 'orange']
+TDIUC_COUNTS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine']
 CLEVR_SHAPES = ['cube', 'sphere', 'cylinder']
 COUNTS = [str(i) for i in range(10)]
+
+
+def resolve_data_roots(data_root=None, tdiuc_root=None, coco_val_root=None):
+    """Resolve dataset locations from explicit args first, then environment variables, then local defaults."""
+    base_data_root = data_root or os.getenv("VLM_GRAPH_DATA_ROOT", "data")
+    resolved_tdiuc_root = tdiuc_root or os.getenv("VLM_GRAPH_TDIUC_ROOT", os.path.join(base_data_root, "TDIUC"))
+    resolved_coco_val_root = coco_val_root or os.getenv("VLM_GRAPH_COCO_VAL_ROOT", os.path.join(base_data_root, "val2014"))
+    return {
+        "data_root": base_data_root,
+        "tdiuc_root": resolved_tdiuc_root,
+        "coco_val_root": resolved_coco_val_root,
+    }
+
 
 def split_clevr_question_answer(qa_str):
     list_ = qa_str.split("?")
@@ -21,7 +36,7 @@ def split_clevr_question_answer(qa_str):
 def constrain_vqa_prompt(dataset, question: str, category: str) -> str:
     if category == "color":
         if dataset == "tdiuc":
-            choices = ", ".join(TUIDC_COLORS)
+            choices = ", ".join(TDIUC_COLORS)
         elif dataset == "clevr":
             choices = ", ".join(CLEVR_COLORS)
         return f"{question} Answer with one word from: {choices}. Output exactly one word."
@@ -45,7 +60,7 @@ def classify_clevr_question(question, answer):
         num = int(answer)
         if 0 <= num < 10:
             return 'counting'
-    except:
+    except (ValueError, TypeError):
         pass
     if "color" in question and answer in CLEVR_COLORS:
         return 'color'
@@ -73,8 +88,16 @@ def caption_prompt(choice=0, add_1sent_constraint=False):
     return prompts[choice]
 
 
-def prepare_vlm_data(dataset: str, num_samples: int, category: str = "color", prompt_choice: int = 1, balance: bool = False,
-                    skip_non_multiple_choice: bool = False) -> list:
+def prepare_vlm_data(
+    dataset: str,
+    num_samples: int,
+    category: str = "color",
+    prompt_choice: int = 1,
+    balance: bool = False,
+    data_root: str | None = None,
+    tdiuc_root: str | None = None,
+    coco_val_root: str | None = None,
+) -> list:
     """
     Prepare a test set for Vision-Language Model evaluation (VQA or captioning).
 
@@ -94,6 +117,7 @@ def prepare_vlm_data(dataset: str, num_samples: int, category: str = "color", pr
     """
     dataset = dataset.lower()
     samples = []
+    paths = resolve_data_roots(data_root=data_root, tdiuc_root=tdiuc_root, coco_val_root=coco_val_root)
 
     balance_str = " (balanced)" if balance else ""
     print(f"Preparing {num_samples} samples from {dataset.upper()} dataset{balance_str}...")
@@ -130,12 +154,19 @@ def prepare_vlm_data(dataset: str, num_samples: int, category: str = "color", pr
                     cnt += 1
                     if cnt >= num_samples:
                         break
-            except Exception:
+            except Exception:  # skip malformed samples
                 continue
     elif dataset == "tdiuc":
-        with open("TDIUC/Questions/OpenEnded_mscoco_val2014_questions.json", "r") as f:
+        questions_path = os.path.join(paths["tdiuc_root"], "Questions", "OpenEnded_mscoco_val2014_questions.json")
+        annotations_path = os.path.join(paths["tdiuc_root"], "Annotations", "mscoco_val2014_annotations.json")
+        if not os.path.exists(questions_path):
+            raise FileNotFoundError(f"TDIUC questions file not found: {questions_path}")
+        if not os.path.exists(annotations_path):
+            raise FileNotFoundError(f"TDIUC annotations file not found: {annotations_path}")
+
+        with open(questions_path, "r") as f:
             data = json.load(f)
-        with open("TDIUC/Annotations/mscoco_val2014_annotations.json", "r") as f:
+        with open(annotations_path, "r") as f:
             annote_data = json.load(f)
 
         image_id_to_questions = {}
@@ -151,17 +182,17 @@ def prepare_vlm_data(dataset: str, num_samples: int, category: str = "color", pr
             question_item = image_id_to_questions.get(ann["question_id"], None)
             if question_item is None:
                 continue
-            image_path = f"val2014/COCO_val2014_{ann['image_id']:012d}.jpg"
+            image_path = os.path.join(paths["coco_val_root"], f"COCO_val2014_{ann['image_id']:012d}.jpg")
             try:
                 img = Image.open(image_path).convert("RGB")
             except Exception:
                 continue
             prompt = constrain_vqa_prompt(dataset, question_item["question"], category)
             ref = ann['answers'][0]['answer'].strip().lower()
-            if category == "color" and ref.lower() not in TUIDC_COLORS:
+            if category == "color" and ref.lower() not in TDIUC_COLORS:
                 continue
             elif category == "counting":
-                if not ref in TUIDC_COUNTS:
+                if ref not in TDIUC_COUNTS:
                     continue
                 ref = number_word_to_digit(ref)
             
@@ -176,32 +207,8 @@ def prepare_vlm_data(dataset: str, num_samples: int, category: str = "color", pr
             cnt += 1
             if cnt >= num_samples:
                 break
-    elif dataset == 'mmmu':
-        subjects = [
-            'Accounting', 'Agriculture', 'Architecture_and_Engineering', 'Art', 
-            'Art_Theory', 'Basic_Medical_Science', 'Biology', 'Chemistry', 
-            'Clinical_Medicine', 'Computer_Science', 'Design', 
-            'Diagnostics_and_Laboratory_Medicine', 'Economics', 'Electronics', 
-            'Energy_and_Power', 'Finance', 'Geography', 'History', 'Literature', 
-            'Manage', 'Marketing', 'Materials', 'Math', 'Mechanical_Engineering', 
-            'Music', 'Pharmacy', 'Physics', 'Psychology', 'Public_Health', 'Sociology'
-        ]
-        non_multiple_choice_cnt = 0
-        for subject in subjects:
-            ds = load_dataset('MMMU/MMMU', subject, split='validation')
-            for s in ds:
-                # print(s['question'], s['options'])
-                if skip_non_multiple_choice:
-                    if s['question_type'] != 'multiple-choice':
-                        print("Skipping non-multiple-choice question")
-                        print(s['question_type'], s['question'])
-                        non_multiple_choice_cnt += 1
-        cnt = 0
-        print(f"Skipped {non_multiple_choice_cnt} non-multiple-choice questions.")
-        print(ds.features)
-        # for s in ds:
     else:
-        raise ValueError("Dataset must be 'coco' or 'clevr'.")
+        raise ValueError(f"Unsupported dataset: '{dataset}'.")
 
     print(f"Loaded {len(samples)} samples from {dataset.upper()}.")
     return samples
@@ -230,11 +237,11 @@ def get_candidate_answers(dataset, category="color"):
             return ['yes', 'no']
     elif dataset == "tdiuc":
         if category == "color":
-            return TUIDC_COLORS
+            return TDIUC_COLORS
         elif category == "counting":
             return COUNTS
     else:
-        raise ValueError("Dataset must be 'clevr' for candidate answers.")
+        raise ValueError(f"Unsupported dataset for candidate answers: '{dataset}'. Supported: 'clevr', 'tdiuc'.")
 
 def number_word_to_digit(word):
     word = word.lower()
@@ -254,33 +261,10 @@ def number_word_to_digit(word):
 
 
 if __name__ == "__main__":
-
-    samples = prepare_vlm_data('mmmu', 900)
-
-
-    # samples = prepare_vlm_data("tdiuc", 999999, category="counting", balance=True)
-    # for i in range(5):
-    #     img, prompt, ref = samples[i]
-    #     print(f"Sample {i}:")
-    #     print(f"Prompt: {prompt}")
-    #     print(f"Reference Answer: {ref}")
-    
-    # from collections import Counter
-    # answers = [ref for _, _, ref in samples]
-    # answer_counts = Counter(answers)
-    # print("Answer distribution:")
-    # for answer, count in answer_counts.most_common():
-    #     print(f"{answer}: {count}")
-        
-    # samples = prepare_vlm_data("tdiuc", 999999, category="color", balance=True)
-    # for i in range(5):
-    #     img, prompt, ref = samples[i]
-    #     print(f"Sample {i}:")
-    #     print(f"Prompt: {prompt}")
-    #     print(f"Reference Answer: {ref}")
-    
-    # answers = [ref for _, _, ref in samples]
-    # answer_counts = Counter(answers)
-    # print("Answer distribution:")
-    # for answer, count in answer_counts.most_common():
-    #     print(f"{answer}: {count}")
+    parser = argparse.ArgumentParser(description="Dataset utilities for VLM graph probing.")
+    parser.add_argument("--self-test", action="store_true", help="Run a tiny path-resolution self-test.")
+    args = parser.parse_args()
+    if args.self_test:
+        print(resolve_data_roots())
+    else:
+        print("dataset.py is a library module. Use --self-test for a tiny smoke check.")

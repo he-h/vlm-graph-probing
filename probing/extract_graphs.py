@@ -1,9 +1,16 @@
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 import torch
 import numpy as np
 from tqdm import tqdm
 import pickle, os, json, argparse
 
-from utils import *
+from utils import model_ckpt2name, evenly_spaced_layers
 from model import NeuronGraphExtractor as GraphExtractor
 from model import build_corr_graph
 from dataset import prepare_vlm_data 
@@ -14,6 +21,7 @@ def create_vqa_dataset(
     num_samples=1000,
     model_ckpt="llava-hf/llava-1.5-7b-hf",
     output_dir="probing_dataset",
+    output_root="data",
     verbose=False,
     device="cuda:0",
     category="color",                  # 'color' | 'counting' | 'existence' | 'comparison' | 'shape'
@@ -21,6 +29,9 @@ def create_vqa_dataset(
     log_every=200,
     layer_slices=4,                # K slices -> K+1 evenly spaced layers (incl. first & last)
     layer_indices=None,            # List of layer indices to save (overrides layer_slices if provided)
+    data_root=None,
+    tdiuc_root=None,
+    coco_val_root=None,
     save=True
 ):
     """
@@ -31,13 +42,24 @@ def create_vqa_dataset(
       - last_token_layer_<L>.npy : float32 array [N, H]
     """
     model_prefix = model_ckpt2name(model_ckpt)
-    out_dir = f"data/{model_prefix}_{dataset}_{category}_sparsity_{int(sparse_level * 100)}_{output_dir}"
+    out_dir = os.path.join(
+        output_root,
+        f"{model_prefix}_{dataset}_{category}_sparsity_{int(sparse_level * 100)}_{output_dir}",
+    )
     os.makedirs(out_dir, exist_ok=True)
 
     # ---- Load data ----
     print("=" * 60)
     print(f"Preparing {dataset} samples, category={category}")
-    data = prepare_vlm_data(dataset=dataset, num_samples=num_samples, category=category, balance=True)
+    data = prepare_vlm_data(
+        dataset=dataset,
+        num_samples=num_samples,
+        category=category,
+        balance=True,
+        data_root=data_root,
+        tdiuc_root=tdiuc_root,
+        coco_val_root=coco_val_root,
+    )
     if not data:
         print("ERROR: No samples loaded!")
         return []
@@ -86,7 +108,7 @@ def create_vqa_dataset(
                 t_edge_weight = text_g["edge_weight"].astype(np.float32)
                 text_graphs_by_layer[L].append([t_num_nodes, t_edge_index, t_edge_weight])
 
-                last_vec = hs[-1, :].contiguous().cpu().numpy().astype(np.float32)
+                last_vec = hs[-1, :].float().contiguous().cpu().numpy()
                 last_token_by_layer[L].append(last_vec)
 
             # Accuracy (simple normalization)
@@ -159,6 +181,12 @@ def create_vqa_dataset(
             "category": category,
             "sparse_level": float(sparse_level),
             "accuracy": acc,
+            "paths": {
+                "output_dir": out_dir,
+                "data_root": data_root,
+                "tdiuc_root": tdiuc_root,
+                "coco_val_root": coco_val_root,
+            },
             "files": {
                 "graphs": [f"graphs_layer_{L}.pkl" for L in selected_layers],
                 "text_graphs": [f"text_graphs_layer_{L}.pkl" for L in selected_layers],
@@ -181,6 +209,10 @@ if __name__ == "__main__":
     parser.add_argument("--category", type=str, default="color")
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--output_dir", type=str, default="probing_dataset")
+    parser.add_argument("--output_root", type=str, default="data", help="Directory where generated artifacts are written.")
+    parser.add_argument("--data_root", type=str, default=None, help="Base data directory. Used for default TDIUC/COCO paths.")
+    parser.add_argument("--tdiuc_root", type=str, default=None, help="Override path to the TDIUC dataset root.")
+    parser.add_argument("--coco_val_root", type=str, default=None, help="Override path to COCO val2014 images.")
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--log_every", type=int, default=200)
     parser.add_argument("--layer_slices", type=int, default=4)
@@ -198,6 +230,7 @@ if __name__ == "__main__":
         num_samples=args.num_samples,
         model_ckpt=args.model_ckpt,
         output_dir=args.output_dir,
+        output_root=args.output_root,
         sparse_level=args.sparse_level,
         category=args.category,
         verbose=args.verbose,
@@ -205,4 +238,7 @@ if __name__ == "__main__":
         log_every=args.log_every,
         layer_slices=args.layer_slices,
         layer_indices=args.layer_indices if args.layer_indices else None,
+        data_root=args.data_root,
+        tdiuc_root=args.tdiuc_root,
+        coco_val_root=args.coco_val_root,
     )

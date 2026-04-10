@@ -1,12 +1,17 @@
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 import torch
 import numpy as np
 from tqdm import tqdm
-import pickle, os, json, argparse
-from collections import Counter
+import os, json, argparse
 
-from utils import *
+from utils import model_ckpt2name, evenly_spaced_layers
 from model import NeuronGraphExtractor as GraphExtractor
-from model import compute_corr_matrix, node_degrees
 from dataset import prepare_vlm_data, get_candidate_answers
 
 
@@ -140,34 +145,32 @@ def intervention_single_layer(
     outputs, preds, refs = [], [], []
 
     for sample_idx, (image, prompt, answer) in enumerate(tqdm(data, desc=f"Layer {target_layer if target_layer else 'baseline'}", disable=True)):
-        # try:
-        hidden_states_all, gen, logits, [image_token_start, text_token_start] = extractor.process_single(image, prompt, max_new_tokens=1, output_logits=True)
-        
-        # Accuracy
-        output = (gen.lower().strip() if isinstance(gen, str) else str(gen))
-        probs = torch.nn.functional.log_softmax(logits[:, -1, :], dim=-1)
-        tok = extractor.processor.tokenizer
-        ids = [tok(c, add_special_tokens=False)["input_ids"][0] for c in candidates]
-        scores = [probs[0, i].item() for i in ids]
-        pred = candidates[int(np.argmax(scores))]
-        ref  = (answer.lower().strip() if isinstance(answer, str) else str(answer))
-        outputs.append(output)
-        preds.append(pred)
-        refs.append(ref)
-        correct += int(pred == ref)
-        total += 1
+        try:
+            hidden_states_all, gen, logits, [image_token_start, text_token_start] = extractor.process_single(image, prompt, max_new_tokens=1, output_logits=True)
+            
+            output = (gen.lower().strip() if isinstance(gen, str) else str(gen))
+            probs = torch.nn.functional.log_softmax(logits[:, -1, :], dim=-1)
+            tok = extractor.processor.tokenizer
+            ids = [tok(c, add_special_tokens=False)["input_ids"][0] for c in candidates]
+            scores = [probs[0, i].item() for i in ids]
+            pred = candidates[int(np.argmax(scores))]
+            ref  = (answer.lower().strip() if isinstance(answer, str) else str(answer))
+            outputs.append(output)
+            preds.append(pred)
+            refs.append(ref)
+            correct += int(pred == ref)
+            total += 1
 
-        # Logging
-        if verbose and sample_idx > 0 and (sample_idx % log_every == 0):
-            print(f"\n--- Sample {sample_idx} ---")
-            print(f"Q: {prompt}")
-            print(f"Output: {output} | Pred: {pred} | Ref: {answer}")
+            if verbose and sample_idx > 0 and (sample_idx % log_every == 0):
+                print(f"\n--- Sample {sample_idx} ---")
+                print(f"Q: {prompt}")
+                print(f"Output: {output} | Pred: {pred} | Ref: {answer}")
 
-        torch.cuda.empty_cache()
+            torch.cuda.empty_cache()
 
-        # except Exception as e:
-        #     print(f"Error processing sample {sample_idx}: {str(e)}")
-        #     continue
+        except Exception as e:
+            print(f"Error processing sample {sample_idx}: {str(e)}")
+            continue
 
     # ---- Remove hook ----
     if hook is not None:
@@ -244,27 +247,27 @@ def run_intervention_experiments(
     
     all_results = {}
     
-    # # ---- Run baseline (no intervention) ----
-    # print(f"\n{'='*60}")
-    # print(f"Running BASELINE (no intervention)")
-    # print(f"{'='*60}")
-    # baseline_acc, baseline_results = intervention_single_layer(
-    #     dataset=dataset,
-    #     num_samples=num_samples,
-    #     model_ckpt=model_ckpt,
-    #     verbose=verbose,
-    #     device=device,
-    #     category=category,
-    #     log_every=log_every,
-    #     hub_neuron_json=None,
-    #     criterion=criterion,
-    #     num_intervene=num_intervene,
-    #     scale=scale,
-    #     target_layer=None,
-    # )
-    # all_results['baseline'] = baseline_results
-    # print(f"Baseline Accuracy: {baseline_acc * 100:.2f}%")
-    # TODO: directly load baseline acc
+    # ---- Run baseline (no intervention) ----
+    print(f"\n{'='*60}")
+    print(f"Running BASELINE (no intervention)")
+    print(f"{'='*60}")
+    baseline_acc, baseline_results = intervention_single_layer(
+        dataset=dataset,
+        num_samples=num_samples,
+        model_ckpt=model_ckpt,
+        verbose=verbose,
+        device=device,
+        category=category,
+        log_every=log_every,
+        hub_neuron_json=None,
+        criterion=criterion,
+        num_intervene=num_intervene,
+        scale=scale,
+        target_layer=None,
+    )
+    all_results['baseline'] = baseline_results
+    print(f"Baseline Accuracy: {baseline_acc * 100:.2f}%")
+    
     # ---- Run intervention for each layer ----
     for layer in selected_layers:
         print(f"\n{'='*60}")

@@ -1,15 +1,39 @@
+# Local datasets and generated artifacts
 data/
-todo.txt
-tmp.sh
-
 TDIUC/
-data/
 val2014/
-__pycache__/
-
 results/
 figures/
-scripts/
+paper_figure/
+
+# Temporary and generated files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+tmp*.py
+tmp*.ipynb
+tmp*.sh
+todo.txt
 nohup.out
+*.out
+*.log
 result.txt
+scripts/**/*.txt
+scripts/compute/
+scripts/data/
+scripts/hub_neuron/
+scripts/intervene/
+scripts/intervene_edge/
+scripts/intervene_hub/
+scripts/intervene_select/
+scripts/modality_corr/
+scripts/verify/
+
+# OS/editor noise
+.DS_Store
+.codex
+
 plot/
+data/

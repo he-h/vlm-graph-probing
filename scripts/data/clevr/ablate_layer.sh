@@ -1,7 +1,5 @@
-export HF_TOKEN="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"
-export HF_HOME="../cache/huggingface"
 
-# python -m probing.vqa.ablate_layer \
+# python -m probing.ablate_layer \
 #     --model_name Qwen/Qwen2.5-VL-3B-Instruct \
 #     --num_samples 100 \
 #     --ablation_layer 18 \
@@ -11,7 +9,7 @@ export HF_HOME="../cache/huggingface"
 #     --log_every 50 \
 #     --task counting 
 
-# python -m probing.vqa.ablate_layer \
+# python -m probing.ablate_layer \
 #     --model_name Qwen/Qwen2.5-VL-3B-Instruct \
 #     --num_samples 100 \
 #     --ablation_layer 18 \
@@ -22,7 +20,7 @@ export HF_HOME="../cache/huggingface"
 #     --log_every 50 \
 #     --task color 
 
-python -m probing.vqa.ablate_layer \
+python -m probing.ablate_layer \
     --model_name Qwen/Qwen2.5-VL-3B-Instruct \
     --num_samples 100 \
     --ablation_layer 0 \
@@ -34,7 +32,7 @@ python -m probing.vqa.ablate_layer \
     --task color 
 
 
-# python -m probing.vqa.ablate_layer \
+# python -m probing.ablate_layer \
 #     --model_name Qwen/Qwen2.5-VL-3B-Instruct \
 #     --num_samples 100 \
 #     --ablation_layer 18 \

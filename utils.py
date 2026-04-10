@@ -1,9 +1,13 @@
-import torch
-import torch.nn.functional as F
+from __future__ import annotations
+
 import unicodedata as ud
 import re
 import numpy as np
 import math
+
+import torch
+import torch.nn.functional as F
+from torch import inference_mode
 
 model_list = [
     "llava-hf/llava-1.5-7b-hf",
@@ -14,14 +18,9 @@ model_list = [
     "Qwen/Qwen2.5-VL-7B-Instruct",
     "Qwen/Qwen2.5-VL-32B-Instruct",
 
-
-    "Salesforce/blip2-opt-2.7b",
-    "Salesforce/blip2-opt-6.7b",
-    "Salesforce/blip2-flan-t5-xxl", #12B
-
-    "google/gemma-3-4b-it", # 2560
-    "google/gemma-3-12b-it", # 3840
-    "google/gemma-3-27b-it", # 3840
+    "google/gemma-3-4b-it",
+    "google/gemma-3-12b-it",
+    "google/gemma-3-27b-it",
 
     "OpenGVLab/InternVL3-1B-hf",
     "OpenGVLab/InternVL3-2B-hf",
@@ -30,6 +29,15 @@ model_list = [
     "OpenGVLab/InternVL3-14B-hf",
     "OpenGVLab/InternVL3-38B-hf",
 ]
+
+
+def require_model_deps():
+    """No-op guard kept for call-site compatibility."""
+    pass
+
+def require_dataset_deps():
+    """No-op guard kept for call-site compatibility."""
+    pass
 
 
 def model_ckpt2name(model_ckpt):
@@ -42,14 +50,12 @@ def model_ckpt2name(model_ckpt):
         "Qwen/Qwen2.5-VL-3B-Instruct": "Qwen2.5-VL-3B",
         "Qwen/Qwen2.5-VL-7B-Instruct": "Qwen2.5-VL-7B",
         "Qwen/Qwen2.5-VL-32B-Instruct": "Qwen2.5-VL-32B",
-        "Salesforce/blip2-opt-2.7b": "BLIP2-OPT-2.7B",
-        "Salesforce/blip2-opt-6.7b": "BLIP2-OPT-6.7B",
-        "Salesforce/blip2-flan-t5-xxl": "BLIP2-FLAN-T5-XXL",
         "google/gemma-3-4b-it": "Gemma-3-4B",
         "google/gemma-3-12b-it": "Gemma-3-12B",
         "google/gemma-3-27b-it": "Gemma-3-27B",
         "OpenGVLab/InternVL3-1B-hf": "InternVL3-1B",
         "OpenGVLab/InternVL3-2B-hf": "InternVL3-2B",
+        "OpenGVLab/InternVL3-4B-hf": "InternVL3-4B",
         "OpenGVLab/InternVL3-8B-hf": "InternVL3-8B",
         "OpenGVLab/InternVL3-14B-hf": "InternVL3-14B",
         "OpenGVLab/InternVL3-38B-hf": "InternVL3-38B",
@@ -63,33 +69,7 @@ def model_ckpt2name(model_ckpt):
     return model_ckpt.split("/")[-1]
 
 
-def prompt_for_model(base_prompt, model_family="llava"):
-    '''Return the caption prompt formatted for VLM input.'''
-    if model_family == "llava":
-        return f"USER: <image>\n{base_prompt} ASSISTANT:"
-    elif model_family == "qwen":
-        return (
-        "<|im_start|>system\n"
-        "You are a helpful assistant.<|im_end|>\n"
-        "<|im_start|>user\n"
-        f"<|vision_start|><|image_pad|><|vision_end|>{base_prompt}<|im_end|>\n"
-        "<|im_start|>assistant\n"
-    )
-    elif model_family == "gemma":
-        return f"<start_of_image> {base_prompt}"
-    elif model_family == "internvl":
-        return (
-        "<|im_start|>system\n"
-        "你是书生·万象，英文名是InternVL，是由上海人工智能实验室、清华大学及多家合作单位联合开发的多模态大语言模型。<|im_end|>\n"
-        "<|im_start|>user\n"
-        "<image>\n"
-        f"{base_prompt}<|im_end|>\n"
-        "<|im_start|>assistant\n"
-    )
-    else:
-        raise ValueError(f"Unsupported model type for prompt: {model_family}")
 
-    
 def get_activation(activation):
     """Get activation function based on string input"""
     activations = {
@@ -107,36 +87,49 @@ def norm_text(s: str) -> str:
     """Simple normalization that extracts just the final response."""
     s = ud.normalize("NFKC", str(s)).strip()
     
-    # Split by any form of "assistant" marker and take the last part
-    # This regex matches: assistant\n, ASSISTANT:, assistant:, Assistant:, etc.
     parts = re.split(r'(?:assistant|ASSISTANT|Assistant)[\n:]', s)
     if len(parts) > 1:
         s = parts[-1].strip()
     
-    # split s by \n
     s = s.split("\n")[-1].strip()
-    
-    # Clean up any remaining artifacts
     s = s.replace("<image>", "").replace("Caption:", "").strip()
     
     return s
 
-    
+
+def sanitize(s: str) -> str:
+    """Normalize unicode and collapse whitespace."""
+    if not isinstance(s, str):
+        s = str(s)
+    s = ud.normalize("NFKC", s)
+    s = s.replace("\n", " ").replace("\r", " ").replace("\t", " ")
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def sanitize_preds_refs(preds, refs):
+    """Sanitize prediction strings and nested reference strings."""
+    preds = [sanitize(p) for p in preds]
+    refs = [[sanitize(r) for r in ref_list] for ref_list in refs]
+    return preds, refs
+
+
+
+
+SUPPORTED_FAMILIES = {"llava", "qwen", "gemma", "internvl"}
 
 def get_layers_dims(model, model_family):
-    if model_family == "qwen" :
-        num_layers = model.config.text_config.num_hidden_layers
-        hidden_dim = model.config.hidden_size
-    elif model_family == "llava" or model_family == "gemma":
-        num_layers = model.config.text_config.num_hidden_layers
-        hidden_dim = model.config.text_config.hidden_size
-    elif model_family == "internvl":
-        num_layers = model.config.text_config.num_hidden_layers
-        hidden_dim = model.config.text_config.hidden_size
-    else:
+    if model_family not in SUPPORTED_FAMILIES:
         raise ValueError(f"Unknown model type: {model_family}")
-
+    num_layers = model.config.text_config.num_hidden_layers
+    hidden_dim = model.config.text_config.hidden_size
     return num_layers, hidden_dim
+
+class _NullCtx:
+    """No-op context manager used when CUDA is unavailable."""
+    def __enter__(self): return None
+    def __exit__(self, *args): return False
+
 
 def amp_ctx():
     if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
@@ -144,9 +137,6 @@ def amp_ctx():
     elif torch.cuda.is_available():
         return torch.autocast("cuda", dtype=torch.float16)
     else:
-        class _NullCtx:
-            def __enter__(self): return None
-            def __exit__(self, *args): return False
         return _NullCtx()
 
 
@@ -181,13 +171,9 @@ def evenly_spaced_layers(num_layers: int, layer_slices: int):
     return idxs.tolist()
 
 def get_blocks(model, model_family):
-    if model_family == "internvl" or model_family == "llava":
-        blocks = model.language_model.layers 
-    elif model_family == "qwen":
-        blocks = model.language_model.layers
-    else:
+    if model_family not in SUPPORTED_FAMILIES:
         raise ValueError(f"Unknown model type: {model_family}")
-    return blocks
+    return model.language_model.layers
 
 def sparsify_graph(num_nodes, edge_index, edge_weight, sparse_level=0.5):
     """
@@ -227,4 +213,3 @@ def sparsify_graph(num_nodes, edge_index, edge_weight, sparse_level=0.5):
     kept_edge_weight = edge_weight[chosen_ordered]
 
     return kept_edge_index, kept_edge_weight
-

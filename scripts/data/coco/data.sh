@@ -1,5 +1,3 @@
-export HF_TOKEN="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"
-export HF_HOME="../cache/huggingface"
 
 # samples=5000
 samples=1000

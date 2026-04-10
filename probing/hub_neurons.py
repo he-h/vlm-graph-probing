@@ -1,10 +1,17 @@
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 import torch
 import numpy as np
 from tqdm import tqdm
 import pickle, os, json, argparse
 from collections import Counter
 
-from utils import *
+from utils import model_ckpt2name, evenly_spaced_layers
 from model import NeuronGraphExtractor as GraphExtractor
 from model import compute_corr_matrix, node_degrees
 from dataset import prepare_vlm_data 
@@ -23,7 +30,7 @@ def analyze_hub_neurons(
     top_k=10  # Number of top neurons to track per sample
 ):
     """
-    Analyze hub neurons across layers without saving anything.
+    Analyze hub neurons across layers and save frequency counts to JSON.
     
     For each sample, track top-k neurons based on three criteria:
     1. Degree from full hidden state correlation
@@ -77,7 +84,7 @@ def analyze_hub_neurons(
                 # 1. Full hidden state degree
                 hs_corr_matrix = compute_corr_matrix(hs)  # [hidden, hidden]
                 hs_degree = node_degrees(hs_corr_matrix)  # [hidden]
-                full_degree_sum[L] += hs_degree.cpu().numpy()
+                full_degree_sum[L] += hs_degree.float().cpu().numpy()
                 top_full_neurons = torch.topk(hs_degree, k=top_k).indices.cpu().numpy()
                 for neuron_idx in top_full_neurons:
                     full_degree_counter[L][int(neuron_idx)] += 1
@@ -86,7 +93,7 @@ def analyze_hub_neurons(
                 text_hs = hs[text_token_start:, :]  # [text_seq, hidden]
                 text_hs_corr_matrix = compute_corr_matrix(text_hs)  # [hidden, hidden]
                 text_hs_degree = node_degrees(text_hs_corr_matrix)  # [hidden]
-                text_degree_sum[L] += text_hs_degree.cpu().numpy()
+                text_degree_sum[L] += text_hs_degree.float().cpu().numpy()
                 top_text_neurons = torch.topk(text_hs_degree, k=top_k).indices.cpu().numpy()
                 for neuron_idx in top_text_neurons:
                     text_degree_counter[L][int(neuron_idx)] += 1
@@ -95,13 +102,13 @@ def analyze_hub_neurons(
                 vision_hs = hs[image_token_start:text_token_start, :]  # [vision_seq, hidden]
                 vision_hs_corr_matrix = compute_corr_matrix(vision_hs)  # [hidden, hidden]
                 vision_hs_degree = node_degrees(vision_hs_corr_matrix)
-                vision_degree_sum[L] += vision_hs_degree.cpu().numpy()
+                vision_degree_sum[L] += vision_hs_degree.float().cpu().numpy()
                 top_vision_neurons = torch.topk(vision_hs_degree, k=top_k).indices.cpu().numpy()
                 for neuron_idx in top_vision_neurons:
                     vision_degree_counter[L][int(neuron_idx)] += 1
                 
                 # 4. Last token activation magnitude
-                last_token_hs = hs[-1, :].abs()  # [hidden]
+                last_token_hs = hs[-1, :].float().abs()  # [hidden]
                 top_last_neurons = torch.topk(last_token_hs, k=top_k).indices.cpu().numpy()
                 last_token_sum[L] += last_token_hs.cpu().numpy()
                 for neuron_idx in top_last_neurons:
@@ -211,7 +218,7 @@ def analyze_hub_neurons(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Analyze hub neurons without saving")
+    parser = argparse.ArgumentParser(description="Analyze hub neurons and save results")
     parser.add_argument("--dataset", type=str, default="clevr") 
     parser.add_argument("--model_ckpt", type=str, default="llava-hf/llava-1.5-7b-hf")
     parser.add_argument("--num_samples", type=int, default=1000)
