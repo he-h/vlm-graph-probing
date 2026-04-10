@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Step 4: Neuron-level intervention (ablation / scaling).
+# Step 5: Neuron-level intervention (ablation / scaling).
 #
-# Requires hub neuron JSON from step 3. For each selected layer, scales
+# Requires hub neuron JSON from step 4. For each selected layer, scales
 # the top-N hub neurons and measures the accuracy change vs. baseline.
 #
 # Usage:

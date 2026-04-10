@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Step 6: Cross-modality (visual-text) token correlation analysis.
+# Step 7: Cross-modality (visual-text) token correlation analysis.
 #
 # For each layer, computes the mean token-token correlation within
 # vision tokens (VV), within text tokens (TT), and across modalities (VT).

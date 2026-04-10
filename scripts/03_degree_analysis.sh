@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Step 2: Layer-wise node-degree and activation analysis across ALL layers.
+# Step 3: Layer-wise node-degree and activation analysis across ALL layers.
 #
 # Computes per-neuron average degree (from sparse correlation graphs) and
 # average |last-token activation| for every layer. Saves two .npy files

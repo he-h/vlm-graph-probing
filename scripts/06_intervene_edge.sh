@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Step 5: Edge-level (neuron-pair) intervention.
+# Step 6: Edge-level (neuron-pair) intervention.
 #
 # Two-pass experiment:
 #   Pass 1 -- accumulate edge importance (sum of |correlation|) across samples.

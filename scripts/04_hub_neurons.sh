@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Step 3: Identify hub neurons by degree and activation frequency.
+# Step 4: Identify hub neurons by degree and activation frequency.
 #
 # For each selected layer, tracks the top-k neurons that appear most
 # frequently as high-degree or high-activation neurons across samples.

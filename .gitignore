@@ -37,3 +37,4 @@ scripts/verify/
 
 plot/
 data/
+scripts/smoke_predict_gcn.py
