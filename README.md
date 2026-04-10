@@ -2,7 +2,7 @@
 
 Code for the paper [Structural Graph Probing of Vision–Language Models](https://arxiv.org/abs/2603.27070).
 
-Overview
+![Overview Diagram](assets/overview.png)
 
 ## Repository Layout
 
