@@ -2,7 +2,7 @@
 
 Code for the paper on graph-based probing and intervention experiments on vision-language models.
 
-![Overview](assets/overview.png)
+![Overview](assets/overview.pdf)
 
 ## Repository Layout
 
